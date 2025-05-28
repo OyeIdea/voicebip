@@ -1,6 +1,16 @@
-// package session_manager
 package session_manager
 
-// Placeholder for Session Manager configuration structures and loading logic.
-// This file will define structs for configuration parameters relevant to session management,
-// such as session timeout values, or integration details with other services.
+// SessionManagerConfig holds the configuration for the Session Manager service.
+type SessionManagerConfig struct {
+	ListenAddress string
+	ApiPort       int
+}
+
+// LoadConfig returns a default SessionManagerConfig instance.
+// In a real application, this would load from a file or environment variables.
+func LoadConfig() SessionManagerConfig {
+	return SessionManagerConfig{
+		ListenAddress: "0.0.0.0",
+		ApiPort:       8000,
+	}
+}

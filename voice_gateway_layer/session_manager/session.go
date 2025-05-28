@@ -1,18 +1,25 @@
-// package session_manager
 package session_manager
 
 import "time"
 
-// Session represents an active communication session.
-// It holds information about the session's state, participants, and associated metadata.
+// SessionState defines the possible states of a session.
+type SessionState string
+
+const (
+	// StatePending indicates the session is being set up.
+	StatePending SessionState = "pending"
+	// StateActive indicates the session is active and ongoing.
+	StateActive SessionState = "active"
+	// StateTerminated indicates the session has ended.
+	StateTerminated SessionState = "terminated"
+)
+
+// Session represents a communication session (e.g., a call).
 type Session struct {
-	ID         string    // Unique identifier for the session
-	Type       string    // Type of the session, e.g., "SIP", "WebRTC"
-	State      string    // Current state of the session, e.g., "initializing", "active", "ringing", "ended"
-	StartTime  time.Time // Timestamp when the session was initiated
-	EndTime    time.Time // Timestamp when the session ended; zero value if active
-	CallerInfo string    // Information about the caller
-	CalleeInfo string    // Information about the callee
-	GatewayID  string    // ID of the specific gateway instance (SIP or WebRTC) handling the session
-	Metadata   map[string]string // Arbitrary key-value pairs for additional session data
+	ID        string            `json:"id"` // Unique identifier for the session (e.g., Call-ID or a generated UUID)
+	Type      string            `json:"type"` // Type of session, e.g., "SIP", "WebRTC"
+	State     SessionState      `json:"state"`    // Current state of the session
+	CreatedAt time.Time         `json:"createdAt"` // Timestamp when the session was created
+	UpdatedAt time.Time         `json:"updatedAt"` // Timestamp when the session was last updated
+	Details   map[string]string `json:"details,omitempty"` // Additional details about the session (e.g., From, To, custom data)
 }

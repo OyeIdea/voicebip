@@ -44,6 +44,22 @@ This document tracks the completion of major foundational tasks in structuring t
 ### General Project Documentation
 - [x] Consolidated Root-Level `README.md`
 
+### Voice Gateway Layer Implementation (Basic)
+*   **`sip_gateway`**:
+    - [x] Basic SIP message handling (INVITE, ACK, BYE)
+    - [x] Conceptual RTP stream and Session Manager integration (logging)
+    - [x] Initial configuration and unit tests
+*   **`webrtc_gateway`**:
+    - [x] WebSocket signaling for WebRTC (offer/answer, ICE)
+    - [x] Basic Pion WebRTC PeerConnection setup
+    - [x] Conceptual Session Manager integration (logging)
+    - [x] Initial configuration and unit tests
+*   **`session_manager`**:
+    - [x] In-memory session store (thread-safe)
+    - [x] CRUD operations for sessions
+    - [x] HTTP API for session management
+    - [x] Initial configuration and unit tests
+
 ## Future Tasks
 
 This progress tracker will be updated as more components of the RevoVoiceAI platform are outlined and structured. For a broader overview of all planned components and the project's full scope, please refer to the "Future Work & Next Steps" section in the main [README.md](./README.md).
