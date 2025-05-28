@@ -13,16 +13,18 @@ Supported protocols include:
 
 ## Services
 
-The services within this layer manage the specifics of each protocol:
+The services within this layer manage the specifics of each protocol and provide centralized session tracking:
 
 *   **`sip_gateway` (Go Service)**: Handles SIP/RTP protocols for telephony integration. Implemented in Go for performance. See the [SIP Gateway Service README](./sip_gateway/README.md) for more details.
 *   **`webrtc_gateway` (Go Service)**: Enables real-time voice (and potentially video) communication directly with web browsers and mobile applications using WebRTC standards. Implemented in Go. See the [WebRTC Gateway Service README](./webrtc_gateway/README.md) for more details.
-*   *(Other gateway services might be added here as they are structured.)*
+*   **`session_manager` (Go Service)**: Provides centralized tracking and management of active voice sessions across different gateway types. Implemented in Go. See the [Session Manager Service README](./session_manager/README.md) for more details.
+*   *(Other gateway services or components like a Telephony Provider Interface might be added here as they are structured.)*
 
 ## Key Responsibilities
 
 *   **Protocol Handling**: Managing signaling and media for different voice protocols.
-*   **Session Management**: Maintaining state for active calls or voice sessions.
+*   **Session Management**: Maintaining state for active calls or voice sessions at the protocol-specific level.
+*   **Centralized Session Tracking**: Maintaining a consistent view of all active sessions across different gateway types via the Session Manager.
 *   **Media Bridging/Forwarding**: Receiving media streams (e.g., RTP) and forwarding them to the Real-Time Processing Engine, and vice-versa.
 *   **Load Balancing**: (Potentially) Distributing incoming call load across multiple processing nodes if applicable at this layer.
 

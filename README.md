@@ -18,6 +18,7 @@ See detailed information in the [Voice Gateway Layer README](./voice_gateway_lay
 **Services Outlined:**
 *   **`sip_gateway` (Go Service)**: Handles SIP/RTP protocols for telephony integration.
 *   **`webrtc_gateway` (Go Service)**: Enables WebRTC-based real-time communication from browsers/mobile.
+*   **`session_manager` (Go Service)**: Provides centralized session tracking for the gateway layer.
 
 ### Real-Time Processing Engine
 
@@ -44,13 +45,13 @@ See detailed information in the [AI/ML Services Layer README](./ai_ml_services/R
 
 The core conversational AI pipeline, involving services from these layers, generally follows this sequence:
 
-1.  **Voice Input (via `VoiceGatewayLayer`)**: User speaks; call is established (e.g., via `sip_gateway` (Go Service) or `webrtc_gateway` (Go Service)).
+1.  **Voice Input (via `VoiceGatewayLayer`)**: User speaks; call is established (e.g., via `sip_gateway` (Go Service) or `webrtc_gateway` (Go Service), managed by `session_manager`).
 2.  **Stream Management (`StreamingDataManager`)**: Captures and manages the incoming audio stream.
 3.  **Speech-to-Text (`SpeechToTextService`)**: Transcribes the audio to text. (VAD and Audio Processing Pipeline may be used here).
 4.  **Natural Language Understanding (`NLUService`)**: Interprets the text to understand intent and extract entities.
 5.  **Dialogue Management (`DialogueManagementService`)**: Decides the next action or response based on NLU output and conversation state.
 6.  **Text-to-Speech (`TextToSpeechService`)**: Converts the system's text response back into audio.
-7.  **Voice Output (via `VoiceGatewayLayer`)**: The synthesized audio is played back to the user (e.g., via `sip_gateway` (Go Service) or `webrtc_gateway` (Go Service) and RTP/SRTP).
+7.  **Voice Output (via `VoiceGatewayLayer`)**: The synthesized audio is played back to the user (e.g., via `sip_gateway` (Go Service) or `webrtc_gateway` (Go Service), managed by `session_manager`, and RTP/SRTP).
 
 This flow enables a full, bidirectional voice-based interaction.
 
