@@ -4,6 +4,9 @@ This document tracks the completion of major foundational tasks in structuring t
 
 ## Completed Foundational Tasks
 
+### Voice Gateway Layer Structures
+- [x] Initial structure for `SIPGatewayService`
+
 ### Real-Time Processing Engine Structures
 - [x] Initial structure for `StreamingDataManager`
 - [x] Initial structure for `SpeechToTextService` (STT)
