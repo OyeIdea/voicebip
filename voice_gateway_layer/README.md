@@ -8,7 +8,7 @@ This layer handles the complexities of different voice transport and signaling p
 
 Supported protocols include:
 *   **SIP (Session Initiation Protocol)**: For integration with traditional telephony (PSTN) via SIP trunks, and direct VoIP connections.
-*   **WebRTC (Web Real-Time Communication)**: (Future) For enabling voice communication directly within web browsers and mobile applications.
+*   **WebRTC (Web Real-Time Communication)**: For enabling voice communication directly within web browsers and mobile applications.
 *   **Telephony Provider Interfaces**: (Future) Direct integrations with specific carrier APIs.
 
 ## Services
@@ -16,7 +16,8 @@ Supported protocols include:
 The services within this layer manage the specifics of each protocol:
 
 *   **`sip_gateway` (Go Service)**: Handles SIP/RTP protocols for telephony integration. Implemented in Go for performance. See the [SIP Gateway Service README](./sip_gateway/README.md) for more details.
-*   *(Other services like `webrtc_gateway_service` will be added here as they are structured.)*
+*   **`webrtc_gateway` (Go Service)**: Enables real-time voice (and potentially video) communication directly with web browsers and mobile applications using WebRTC standards. Implemented in Go. See the [WebRTC Gateway Service README](./webrtc_gateway/README.md) for more details.
+*   *(Other gateway services might be added here as they are structured.)*
 
 ## Key Responsibilities
 

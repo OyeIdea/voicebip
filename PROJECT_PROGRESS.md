@@ -6,6 +6,7 @@ This document tracks the completion of major foundational tasks in structuring t
 
 ### Voice Gateway Layer Structures
 - [x] Initial structure for `sip_gateway` (Go implementation)
+- [x] Initial structure for `webrtc_gateway` (Go implementation)
 
 ### Real-Time Processing Engine Structures
 - [x] Initial structure for `StreamingDataManager`
