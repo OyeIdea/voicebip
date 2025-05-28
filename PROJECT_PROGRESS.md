@@ -21,6 +21,9 @@ This document tracks the completion of major foundational tasks in structuring t
 - [x] Initial structure for `DialogueManagementService` (DM)
 - [x] Initial structure for `SentimentAnalysisEngineService`
 
+### Business Logic Layer Structures
+- [x] Initial structure for `CallRoutingService`
+
 ### General Project Documentation
 - [x] Consolidated Root-Level `README.md`
 
