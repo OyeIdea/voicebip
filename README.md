@@ -41,6 +41,10 @@ See detailed information in the [AI/ML Services Layer README](./ai_ml_services/R
 *   **`NLUService` (Natural Language Understanding)**: Processes input text to identify user intents, extract key entities, and manage conversational context.
 *   **`DialogueManagementService` (DM)**: Manages the conversation flow, tracks dialogue state, and determines the system's next actions or responses based on NLU output.
 *   **`SentimentAnalysisEngineService`**: Dedicated to detecting emotional tone in text.
+*   **Specialized AI Services:**
+    *   `VoiceCloningService`: For voice model training and custom voice synthesis.
+    *   `PredictiveAnalyticsEngine`: For call volume forecasting and customer behavior prediction.
+    *   `PersonalizationEngine`: For customer profile analysis and interaction customization.
 
 ### Business Logic Layer
 
@@ -48,7 +52,12 @@ Orchestrates application workflows and implements core business rules. Implement
 See detailed information in the [Business Logic Layer README](./business_logic_layer/README.md).
 
 **Services Outlined:**
-*   **`CallRoutingService`**: Determines optimal routing for incoming calls based on intent, skills, etc.
+*   **`CallManagementServices`**: Manages call routing, session orchestration, and related functionalities.
+    *   Includes `CallRoutingService` and `SessionOrchestratorService`.
+*   **`CustomerProfileService`**: Manages customer identity, preferences, and interaction history.
+*   **`PersonalizationService`**: Handles dynamic content adaptation and context-aware responses.
+*   **`RealTimeAgentAssistant`**: Provides live transcription, suggestions, and knowledge base integration for agents.
+*   **`PerformanceAnalyticsService`**: Tracks KPIs, monitors quality, and provides training recommendations.
 
 ## High-Level Interaction Flow
 
@@ -59,8 +68,8 @@ The core conversational AI pipeline, involving services from these layers, gener
 3.  **Speech-to-Text (`SpeechToTextService`)**: Transcribes the audio to text. (VAD and Audio Processing Pipeline may be used here).
 4.  **Natural Language Understanding (`NLUService`)**: Interprets the text to understand intent and extract entities. (May incorporate sentiment via `SentimentAnalysisEngineService`).
 5.  **Dialogue Management (`DialogueManagementService`)**: Decides the next system action or preliminary response content based on NLU output (including sentiment) and conversation state.
-6.  **Call Routing (`CallRoutingService`)**: If the DM's decision involves routing (e.g., to an agent or specific queue), the `CallRoutingService` determines the specific target based on business rules, NLU data, and agent availability.
-7.  **Text-to-Speech (`TextToSpeechService`)**: Converts the system's text response (from DM or other business logic) back into audio.
+6.  **Call Management (`CallManagementServices`)**: If the DM's decision involves routing or complex session handling (e.g., to an agent or specific queue), the `CallManagementServices` (specifically `CallRoutingService` and `SessionOrchestratorService`) determine the specific target and manage the call flow based on business rules, NLU data, and agent availability.
+7.  **Text-to-Speech (`TextToSpeechService`)**: Converts the system's text response (from DM or other business logic, potentially customized by `PersonalizationService`) back into audio.
 8.  **Voice Output (via `VoiceGatewayLayer`)**: The synthesized audio is played back to the user (e.g., via `sip_gateway` (Go Service) or `webrtc_gateway` (Go Service), managed by `session_manager`, and RTP/SRTP).
 
 This flow enables a full, bidirectional voice-based interaction.
@@ -71,8 +80,8 @@ This repository currently represents only the initial structural skeleton of the
 
 *   Other services in the Voice Gateway Layer.
 *   Remaining services in the Real-Time Processing Engine.
-*   Other services in the AI/ML Services Layer.
-*   Other services in the Business Logic Layer (e.g., Customer Profile Service, Agent Assist).
+*   Other services in the AI/ML Services Layer (now largely covered with the specialized services).
+*   Other services in the Business Logic Layer (now largely covered with customer and agent support services).
 *   **Integration Layer** (CRM/ERP connectors, Omnichannel Hub).
 *   **Data Management Layer** (Databases, Data Processing pipelines).
 *   **Security & Compliance Layer**.

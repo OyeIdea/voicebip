@@ -10,8 +10,17 @@ This layer acts as an intermediary between the presentation/gateway layers and t
 
 The services within this layer handle specific domains of business functionality:
 
-*   **`call_routing_service`**: Determines the optimal destination for incoming calls based on various factors like NLU intent, agent skills, and queue status. See the [Call Routing Service README](./call_routing_service/README.md) for more details.
-*   *(Other services like `CustomerProfileService` and `RealtimeAgentAssistantService` will be added here as they are structured.)*
+*   **`CallManagementServices`**: Manages call routing, session orchestration, and related functionalities. ([Details](./call_management_services/README.md))
+
+## Customer Services
+
+*   **`CustomerProfileService`**: Manages customer identity, preference storage, and interaction history. ([Details](./customer_profile_service/README.md))
+*   **`PersonalizationService`**: Handles dynamic content adaptation and context-aware responses, potentially utilizing the PersonalizationEngine from the AI/ML layer. ([Details](./personalization_service/README.md))
+
+## Agent Support Services
+
+*   **`RealTimeAgentAssistant`**: Provides agents with live transcription, suggestions, and knowledge base integration. ([Details](./real_time_agent_assistant/README.md))
+*   **`PerformanceAnalyticsService`**: Tracks KPIs, monitors quality, and provides training recommendations for agent performance. ([Details](./performance_analytics_service/README.md))
 
 ## Key Responsibilities
 

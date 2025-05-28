@@ -30,3 +30,9 @@ The services within this layer, along with those from other layers like the Real
 6.  **Voice Output**: The synthesized voice is played back to the user.
 
 This modular architecture allows each service to specialize in its specific task, promoting maintainability and scalability. The `NLUService`, `SentimentAnalysisEngineService`, and `DialogueManagementService` are key components in the "understanding" and "decision-making" phases of this pipeline.
+
+## Specialized AI Services
+
+*   **`VoiceCloningService`**: Responsible for voice model training and custom voice synthesis. ([Details](./voice_cloning_service/README.md))
+*   **`PredictiveAnalyticsEngine`**: Handles call volume forecasting and customer behavior prediction. ([Details](./predictive_analytics_engine/README.md))
+*   **`PersonalizationEngine`**: Manages customer profile analysis and interaction customization. ([Details](./personalization_engine/README.md))
