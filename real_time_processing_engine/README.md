@@ -6,10 +6,11 @@ This directory contains the services that form the core of the Real-Time Process
 
 Currently, the following services are outlined:
 
-*   **`speech_to_text_service`**: Responsible for transcribing audio streams into text.
 *   **`streaming_data_manager`**: Manages incoming data streams (e.g., audio from calls) and routes them to appropriate processing services.
+*   **`speech_to_text_service`**: Responsible for transcribing audio streams into text.
 *   **`text_to_speech_service`**: Converts textual responses into audible speech.
-*   *(Other services like VAD, Audio Processing Pipeline might be added here later)*
+*   **`vad_service` (Voice Activity Detection Service)**: Detects speech and silence segments in an audio stream, aiding in efficient processing.
+*   *(Other services like Audio Processing Pipeline might be added here later)*
 
 ## Conceptual Full Voice Interaction Flow
 
@@ -18,9 +19,10 @@ A typical flow for a complete voice interaction:
 1.  **Call Initiation / Voice Input**:
     *   An external component (like a Voice Gateway) signals the start of a new audio stream (e.g., an incoming call).
     *   The `StreamingDataManager` registers this new audio stream.
-2.  **Speech-to-Text (STT) Processing**:
-    *   The `StreamingDataManager` routes the incoming audio stream/chunks to the `SpeechToTextService`.
-    *   The `SpeechToTextService` transcribes the audio into plain text.
+2.  **Voice Activity Detection (VAD) & Speech-to-Text (STT) Processing**:
+    *   The `StreamingDataManager` routes the incoming audio stream/chunks.
+    *   Optionally, the `VADService` processes audio chunks to identify segments containing speech. This can help optimize STT by only processing relevant segments.
+    *   The `SpeechToTextService` transcribes the (potentially VAD-filtered) audio into plain text.
 3.  **AI/ML Processing (External to this Engine)**:
     *   The transcribed text is passed to the AI/ML Services Layer.
     *   **Natural Language Understanding (NLU)** service processes the text to identify intents and entities.
