@@ -40,6 +40,7 @@ See detailed information in the [AI/ML Services Layer README](./ai_ml_services/R
 **Services Outlined:**
 *   **`NLUService` (Natural Language Understanding)**: Processes input text to identify user intents, extract key entities, and manage conversational context.
 *   **`DialogueManagementService` (DM)**: Manages the conversation flow, tracks dialogue state, and determines the system's next actions or responses based on NLU output.
+*   **`SentimentAnalysisEngineService`**: Dedicated to detecting emotional tone in text.
 
 ## High-Level Interaction Flow
 
@@ -48,8 +49,8 @@ The core conversational AI pipeline, involving services from these layers, gener
 1.  **Voice Input (via `VoiceGatewayLayer`)**: User speaks; call is established (e.g., via `sip_gateway` (Go Service) or `webrtc_gateway` (Go Service), managed by `session_manager`).
 2.  **Stream Management (`StreamingDataManager`)**: Captures and manages the incoming audio stream.
 3.  **Speech-to-Text (`SpeechToTextService`)**: Transcribes the audio to text. (VAD and Audio Processing Pipeline may be used here).
-4.  **Natural Language Understanding (`NLUService`)**: Interprets the text to understand intent and extract entities.
-5.  **Dialogue Management (`DialogueManagementService`)**: Decides the next action or response based on NLU output and conversation state.
+4.  **Natural Language Understanding (`NLUService`)**: Interprets the text to understand intent and extract entities. (May incorporate sentiment via `SentimentAnalysisEngineService`).
+5.  **Dialogue Management (`DialogueManagementService`)**: Decides the next action or response based on NLU output (including sentiment) and conversation state.
 6.  **Text-to-Speech (`TextToSpeechService`)**: Converts the system's text response back into audio.
 7.  **Voice Output (via `VoiceGatewayLayer`)**: The synthesized audio is played back to the user (e.g., via `sip_gateway` (Go Service) or `webrtc_gateway` (Go Service), managed by `session_manager`, and RTP/SRTP).
 
@@ -61,7 +62,7 @@ This repository currently represents only the initial structural skeleton of the
 
 *   Other services in the Voice Gateway Layer.
 *   Remaining services in the Real-Time Processing Engine (e.g., explicitly listing VAD, Audio Processing Pipeline in more detail).
-*   Specialized AI Services (e.g., Voice Cloning, Sentiment Analysis as a dedicated service, Predictive Analytics, Personalization Engine).
+*   Specialized AI Services (e.g., Voice Cloning, Predictive Analytics, Personalization Engine).
 *   **Business Logic Layer** (Call Management, Customer Services, Agent Support).
 *   **Integration Layer** (CRM/ERP connectors, Omnichannel Hub).
 *   **Data Management Layer** (Databases, Data Processing pipelines).
