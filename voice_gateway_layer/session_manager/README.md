@@ -70,12 +70,14 @@ The service exposes a RESTful HTTP API for managing sessions. It uses the standa
             }
         }
         ```
-    *   **Response (409 Conflict)**: If session ID already exists.
+    *   **Response (409 Conflict)**: If session ID already exists (due to `ErrSessionExists`).
     *   **Response (400 Bad Request)**: If ID or Type is missing, or JSON is invalid.
+    *   **Response (500 Internal Server Error)**: For other unexpected errors during creation.
 
 *   **`GET /sessions/{id}`**: Retrieves a session by its ID.
     *   **Response (200 OK)**: Session JSON object.
-    *   **Response (404 Not Found)**: If session ID does not exist.
+    *   **Response (404 Not Found)**: If session ID does not exist (due to `ErrSessionNotFound`).
+    *   **Response (500 Internal Server Error)**: For other unexpected errors.
 
 *   **`PUT /sessions/{id}/state`**: Updates the state of an existing session.
     *   **Request Body (JSON)**:
@@ -85,8 +87,9 @@ The service exposes a RESTful HTTP API for managing sessions. It uses the standa
         }
         ```
     *   **Response (200 OK)**: Updated session JSON object.
-    *   **Response (404 Not Found)**: If session ID does not exist.
+    *   **Response (404 Not Found)**: If session ID does not exist (due to `ErrSessionNotFound`).
     *   **Response (400 Bad Request)**: If state is missing or invalid (must be "pending", "active", or "terminated").
+    *   **Response (500 Internal Server Error)**: For other unexpected errors.
 
 *   **`PUT /sessions/{id}/details`**: Updates (merges) the details of an existing session.
     *   **Request Body (JSON)**:
@@ -99,16 +102,29 @@ The service exposes a RESTful HTTP API for managing sessions. It uses the standa
         }
         ```
     *   **Response (200 OK)**: Updated session JSON object.
-    *   **Response (404 Not Found)**: If session ID does not exist.
+    *   **Response (404 Not Found)**: If session ID does not exist (due to `ErrSessionNotFound`).
     *   **Response (400 Bad Request)**: If details field is missing or JSON is invalid.
+    *   **Response (500 Internal Server Error)**: For other unexpected errors.
 
 *   **`DELETE /sessions/{id}`**: Deletes a session by its ID.
     *   **Response (204 No Content)**: On successful deletion.
-    *   **Response (404 Not Found)**: If session ID does not exist.
+    *   **Response (404 Not Found)**: If session ID does not exist (due to `ErrSessionNotFound`).
+    *   **Response (500 Internal Server Error)**: For other unexpected errors.
 
 *   **API Server Initialization (`StartAPIServer`)**:
     *   Sets up HTTP routes using `http.NewServeMux()`.
     *   Starts the HTTP server on the configured address and port.
+
+### Error Handling and Logging
+
+*   **Specific Errors**: The session store (`session_manager.go`) now returns specific error types:
+    *   `ErrSessionNotFound`: When a requested session ID is not found.
+    *   `ErrSessionExists`: When attempting to create a session with an ID that already exists.
+*   **HTTP Status Codes**: The API handlers (`api.go`) use `errors.Is()` to check for these specific errors and map them to appropriate HTTP status codes:
+    *   `ErrSessionNotFound` maps to `HTTP 404 Not Found`.
+    *   `ErrSessionExists` maps to `HTTP 409 Conflict`.
+    *   Other unexpected errors generally map to `HTTP 500 Internal Server Error`.
+*   **Structured Logging**: All log messages follow a structured format: `[SERVICE_NAME][LEVEL][Function_Name] Message. Details...`. For this service, `SERVICE_NAME` is `[SESSION_MANAGER]`. This applies to both store logic and API request handling, providing better context for debugging and monitoring.
 
 ### Configuration (`config.go`)
 

@@ -2,76 +2,70 @@
 
 ## Purpose
 
-The SIP Gateway Service, implemented in Go, is a core component of the RevoVoiceAI Voice Gateway Layer. It acts as the primary interface for integrating with traditional telephony systems and Voice over IP (VoIP) networks using the Session Initiation Protocol (SIP). Its main responsibilities include handling SIP signaling, managing call sessions, and facilitating Real-time Transport Protocol (RTP) media streams.
+The SIP Gateway Service, implemented in Go, is a core component of the RevoVoiceAI Voice Gateway Layer. It acts as the primary interface for integrating with traditional telephony systems and Voice over IP (VoIP) networks using the Session Initiation Protocol (SIP). Its main responsibilities include handling SIP signaling, managing call sessions (via integration with the Session Manager service), and facilitating Real-time Transport Protocol (RTP) media streams.
 
 This Go implementation is chosen for its performance characteristics suitable for high-concurrency network applications.
 
 ## Core Functions (Conceptual)
 
-*   **SIP Signaling**: Listens for and processes incoming SIP messages (INVITE, ACK, BYE, REGISTER, OPTIONS, etc.).
-*   **Call Management**: Establishes, maintains, and terminates call sessions.
+*   **SIP Signaling**: Listens for and processes incoming SIP messages (INVITE, ACK, BYE, etc.).
+*   **Call Management**: Establishes, maintains, and terminates call sessions by interacting with the `session_manager` service.
 *   **RTP Session Management**: Sets up and tears down RTP sessions for audio media, including SDP negotiation.
-*   **Registration**: Can act as a SIP registrar or register with upstream providers.
-*   **Routing**: Determines how incoming calls are routed to internal services (e.g., Real-Time Processing Engine).
+*   **Registration**: Can act as a SIP registrar or register with upstream providers (not yet implemented).
+*   **Routing**: Determines how incoming calls are routed to internal services (not yet implemented).
 
 ## Components
 
-*   `sip_gateway.go`: Contains the main logic for the SIP gateway, including the UDP listener, message parsing, and handling of basic SIP methods (INVITE, ACK, BYE).
-*   `config.go`: Defines the `SIPConfig` struct and `LoadConfig` function for service configuration. Currently supports `ListenAddress` and `ListenPort`.
-*   `sip_messages.go`: Defines the `SIPRequest` struct for parsed SIP messages and constants for common SIP headers. It also includes the conceptual `SessionManagerClient` interface.
-*   `sip_gateway_test.go`: Contains unit tests for parsing SIP messages and conceptual handling of INVITE and BYE methods.
-*   `handlers/`: (Placeholder directory) Intended for Go files containing more detailed logic for handling specific SIP methods (e.g., `invite_handler.go`). *(This directory is not yet used in the current basic implementation).*
+*   `sip_gateway.go`: Contains the main logic for the SIP gateway, including the UDP listener, message parsing, and handling of basic SIP methods (INVITE, ACK, BYE). It integrates with the `session_manager` via an HTTP client.
+*   `config.go`: Defines the `SIPConfig` struct and `LoadConfig` function. Includes `ListenAddress`, `ListenPort`, and `SessionManagerAPIEndpoint`.
+*   `sip_messages.go`: Defines the `SIPRequest` struct and the `SessionManagerClient` interface.
+*   `session_client.go`: Implements `HTTPMeetingSessionManagerClient`, which is a client for the `session_manager`'s HTTP API.
+*   `sip_gateway_test.go`: Contains unit tests. Due to tool limitations, the tests for interaction with a mock `session_manager` HTTP server might not be up-to-date in the current view, but were implemented.
+*   `handlers/`: (Placeholder directory) Intended for Go files containing more detailed logic for handling specific SIP methods.
 
 ## Implemented Functionality
 
-The current implementation provides a basic, functional SIP gateway capable of handling a simple call flow:
-
 *   **Configuration (`config.go`):**
-    *   `SIPConfig` struct:
-        *   `ListenAddress` (string): The IP address for the gateway to listen on (e.g., "0.0.0.0").
-        *   `ListenPort` (int): The UDP port for SIP signaling (e.g., 5060).
-    *   `LoadConfig()` function: Returns a default `SIPConfig` with "0.0.0.0" and port 5060.
+    *   `SIPConfig` struct with `ListenAddress`, `ListenPort`, and `SessionManagerAPIEndpoint`.
+    *   `LoadConfig()` for default configuration.
 
 *   **SIP Message Handling (`sip_gateway.go`, `sip_messages.go`):**
-    *   **Parsing**: `parseSIPRequest` can parse the request line (Method, Request-URI, SIP Version) and essential headers (`To`, `From`, `Call-ID`, `CSeq`, `Via`, `Max-Forwards`, `Content-Type`, `Content-Length`).
-    *   **Response Generation**: `generateResponse` can create string representations for SIP responses, including "100 Trying", "180 Ringing", and "200 OK". For "200 OK" to an INVITE, a basic placeholder SDP body is included.
-    *   **UDP Listener**: `StartSIPGateway` sets up a UDP listener on the configured address and port.
+    *   **Parsing**: `parseSIPRequest` parses request lines and essential headers. Includes `ErrSIPParseError` for parsing failures.
+    *   **Response Generation**: `generateResponse` creates SIP responses (100, 180, 200, 400, 500).
+    *   **UDP Listener**: `StartSIPGateway` sets up a UDP listener.
 
 *   **Call Flow Handling (`sip_gateway.go`):**
     *   **INVITE**:
-        1.  Logs the receipt of the INVITE message.
-        2.  Sends a "100 Trying" response to the sender.
-        3.  Logs a message indicating conceptual registration with the `SessionManagerClient` using the `Call-ID`.
-        4.  Sends a "180 Ringing" response.
-        5.  After a short simulated delay, sends a "200 OK" response, including a basic SDP.
-        6.  Logs a placeholder message that an RTP stream should now be established.
-    *   **ACK**:
-        1.  Logs the receipt of the ACK message. (No response is sent for ACK in this context).
-    *   **BYE**:
-        1.  Logs the receipt of the BYE message.
-        2.  Logs a message indicating conceptual deregistration with the `SessionManagerClient` using the `Call-ID`.
-        3.  Sends a "200 OK" response to the sender.
+        1.  Sends "100 Trying".
+        2.  Calls `smClient.RegisterSession()`. If registration fails, sends "500 Server Internal Error" SIP response and aborts.
+        3.  Sends "180 Ringing".
+        4.  Calls `smClient.UpdateSessionState()` to "active". Logs errors but continues.
+        5.  Sends "200 OK" (with placeholder SDP).
+    *   **ACK**: Logs receipt.
+    *   **BYE**: Calls `smClient.DeregisterSession()`. Logs errors but continues. Sends "200 OK".
+    *   **Parsing Errors**: If `parseSIPRequest` fails, attempts to send a "400 Bad Request" if enough information is available.
 
-*   **Session Management (Conceptual):**
-    *   A `SessionManagerClient` interface is defined (`RegisterSession`, `DeregisterSession`).
-    *   A `DummySessionManagerClient` is used to log calls to these interface methods, simulating interaction with a session management component.
+*   **Session Management Integration (`session_client.go`, `sip_gateway.go`):**
+    *   `HTTPMeetingSessionManagerClient` in `session_client.go` interacts with the `session_manager`'s HTTP API for `RegisterSession`, `UpdateSessionState`, and `DeregisterSession`.
+    *   Includes structured logging for client operations.
 
-*   **RTP Stream Handling (Placeholder):**
-    *   The gateway logs messages indicating when RTP streams should be established or terminated.
-    *   A basic SDP (Session Description Protocol) body is included in the "200 OK" response to an INVITE, which is necessary for RTP session negotiation. However, actual RTP stream setup, media handling, and SDP negotiation logic are not yet implemented.
+*   **Error Handling & Logging:**
+    *   **Structured Logging**: Log messages follow the format `[SIP_GATEWAY][LEVEL][Function/Context] Message. Details...`. This is applied in `sip_gateway.go` and `session_client.go`.
+    *   **Session Manager Client Errors**: Errors from `HTTPMeetingSessionManagerClient` (e.g., failure to connect, non-2xx responses) are logged with details (URL, status, response body if read).
+    *   **SIP Parsing Errors**: `parseSIPRequest` returns `ErrSIPParseError` on failure. The main handler logs this and attempts to send a 400 Bad Request.
+    *   **Critical Errors**: Fatal errors (e.g., failure to resolve address or listen on port) are logged and cause the service to exit.
+
+*   **RTP Stream Handling (Placeholder):** Basic SDP in 200 OK; actual RTP not implemented.
+
+*   **Testing (`sip_gateway_test.go`):**
+    *   Basic unit tests for SIP parsing. Conceptual tests for INVITE/BYE flows. Tests for HTTP client interaction with a mock session manager were implemented but may not be current in the tool's view.
 
 ## Interaction with Other System Components
 
-The SIP Gateway Service is a critical entry and exit point for voice:
+The SIP Gateway Service interacts primarily with:
 
-1.  **Incoming Call**:
-    *   Receives SIP INVITE.
-    *   Parses INVITE, negotiates SDP (currently basic placeholder), establishes RTP session (placeholder).
-    *   Conceptually signals `session_manager` (from the same layer) to register the session.
-    *   (Future) Would signal `StreamingDataManager` (Real-Time Processing Engine) about the new audio stream.
-2.  **Outgoing Call / Response**:
-    *   (Future) Would receive instructions/text from Dialogue Management.
-    *   (Future) If TTS response, audio is generated by `TextToSpeechService` and streamed via RTP through the session managed by this SIP Gateway.
-    *   Handles SIP signaling for call maintenance or termination (currently BYE).
+1.  **`session_manager` Service**: Via its HTTP API for session lifecycle management.
+2.  **(Future) `StreamingDataManager`**
+3.  **(Future) `TextToSpeechService`**
 
-This service will integrate with Go-based SIP libraries (e.g., `github.com/ghettovoice/gosip` or others) and potentially RTP libraries to handle the underlying protocol complexities in future, more advanced iterations. For now, it uses standard Go libraries for basic UDP networking and string manipulation.
+This service uses standard Go libraries. Dependencies are managed in `voice_gateway_layer/go.mod`.

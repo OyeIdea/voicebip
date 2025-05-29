@@ -29,8 +29,8 @@ const (
 )
 
 // SessionManagerClient defines the interface for interacting with a session manager.
-// This is a conceptual interface for now.
 type SessionManagerClient interface {
-	RegisterSession(callID string, sessionDetails map[string]string) error
+	RegisterSession(callID string, sessionType string, details map[string]string) error
+	UpdateSessionState(callID string, state string) error // Added state parameter
 	DeregisterSession(callID string) error
 }

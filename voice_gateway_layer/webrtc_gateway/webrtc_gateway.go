@@ -9,10 +9,11 @@ import (
 )
 
 // StartWebRTCGateway initializes and starts the WebRTC gateway.
-func StartWebRTCGateway(cfg WebRTCConfig, smClient SessionManagerClient) {
-	// Prepare the WebRTC PeerConnection configuration
-	// For this basic implementation, we'll use a public STUN server.
-	// In a production environment, you'd likely have your own TURN servers.
+func StartWebRTCGateway(cfg WebRTCConfig) {
+	log.Printf("%s[INFO][StartWebRTCGateway] Initializing WebRTC Gateway...", WebRTCGatewayLogPrefix)
+
+	smHTTPClient := NewHTTPMeetingSessionManagerClient(cfg.SessionManagerAPIEndpoint)
+
 	peerConnectionConfig := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -20,24 +21,24 @@ func StartWebRTCGateway(cfg WebRTCConfig, smClient SessionManagerClient) {
 			},
 		},
 	}
+	log.Printf("%s[DEBUG][StartWebRTCGateway] PeerConnection configuration prepared with STUN servers: %v", WebRTCGatewayLogPrefix, cfg.StunServers)
 
-	// Set up the HTTP handler for WebSocket signaling
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		HandleWebSocketConnections(w, r, peerConnectionConfig, smClient)
+		log.Printf("%s[INFO][StartWebRTCGateway] Incoming WebSocket request for /ws from %s", WebRTCGatewayLogPrefix, r.RemoteAddr)
+		HandleWebSocketConnections(w, r, peerConnectionConfig, smHTTPClient)
 	})
 
-	// Start the HTTP server for signaling
 	listenAddr := fmt.Sprintf("%s:%d", cfg.ListenAddress, cfg.SignalPort)
-	log.Printf("WebRTC Gateway signaling server starting on %s", listenAddr)
+	log.Printf("%s[INFO][StartWebRTCGateway] WebRTC Gateway signaling server starting on http://%s", WebRTCGatewayLogPrefix, listenAddr)
 
 	if err := http.ListenAndServe(listenAddr, nil); err != nil {
-		log.Fatalf("Failed to start WebRTC signaling server: %v", err)
+		log.Fatalf("%s[FATAL][StartWebRTCGateway] Failed to start WebRTC signaling server on %s: %v", WebRTCGatewayLogPrefix, listenAddr, err)
 	}
 }
 
 // Example main function (can be removed or kept for standalone testing)
 // func main() {
+// 	log.Printf("%s[INFO][main] Starting WebRTC Gateway service...", WebRTCGatewayLogPrefix)
 // 	cfg := LoadConfig()
-// 	var smClient SessionManagerClient = &DummyWebRTCSessionManagerClient{} // Use dummy client
-// 	StartWebRTCGateway(cfg, smClient)
+// 	StartWebRTCGateway(cfg)
 // }

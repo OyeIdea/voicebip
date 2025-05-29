@@ -2,10 +2,12 @@ package webrtc_gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
 
+	"github.com/google/uuid" // For generating unique session IDs
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
 )
@@ -18,198 +20,183 @@ type SignalMessage struct {
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow all connections for simplicity in this example.
-		// In a production environment, you should implement proper origin checking.
 		return true
 	},
-}
-
-// SessionManagerClient defines the interface for interacting with a session manager.
-// This is a conceptual interface, copied from sip_gateway for consistency.
-type SessionManagerClient interface {
-	RegisterSession(sessionID string, sessionDetails map[string]string) error
-	DeregisterSession(sessionID string) error
-}
-
-// DummyWebRTCSessionManagerClient is a placeholder implementation for SessionManagerClient.
-type DummyWebRTCSessionManagerClient struct{}
-
-func (d *DummyWebRTCSessionManagerClient) RegisterSession(sessionID string, sessionDetails map[string]string) error {
-	log.Printf("WEBRTC_SESSION_MANAGER_CLIENT: Registering session for SessionID: %s, Details: %v\n", sessionID, sessionDetails)
-	return nil
-}
-
-func (d *DummyWebRTCSessionManagerClient) DeregisterSession(sessionID string) error {
-	log.Printf("WEBRTC_SESSION_MANAGER_CLIENT: Deregistering session for SessionID: %s\n", sessionID)
-	return nil
 }
 
 // HandleWebSocketConnections is the HTTP handler for WebSocket signaling.
 func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConnectionConfig webrtc.Configuration, smClient SessionManagerClient) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Failed to upgrade connection to WebSocket: %v", err)
+		log.Printf("%s[ERROR][HandleWebSocketConnections] Failed to upgrade connection to WebSocket: %v. RemoteAddr: %s", WebRTCGatewayLogPrefix, err, r.RemoteAddr)
 		return
 	}
 	defer conn.Close()
 
-	log.Println("WebSocket connection established")
-	sessionID := conn.RemoteAddr().String() // Use remote address as a simple session ID
+	sessionID := uuid.New().String()
+	log.Printf("%s[INFO][HandleWebSocketConnections] WebSocket connection established. SessionID: %s, RemoteAddr: %s", WebRTCGatewayLogPrefix, sessionID, conn.RemoteAddr().String())
 
-	// Create a new PeerConnection
-	// Note: In a more complex app, the API (media engine, settings) would be created once.
-	// For simplicity, creating API per connection here, but this is not optimal.
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(&webrtc.MediaEngine{})) // Basic media engine
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(&webrtc.MediaEngine{}))
 	peerConnection, err := api.NewPeerConnection(peerConnectionConfig)
 	if err != nil {
-		log.Printf("Failed to create PeerConnection: %v", err)
-		conn.WriteJSON(SignalMessage{Type: "error", Payload: "Failed to create PeerConnection"})
+		log.Printf("%s[ERROR][HandleWebSocketConnections] Failed to create PeerConnection: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+		// Attempt to send error over WebSocket, but connection might be unstable
+		wsErr := conn.WriteJSON(SignalMessage{Type: "error", Payload: fmt.Sprintf("Failed to create PeerConnection: %v", err)})
+		if wsErr != nil {
+			log.Printf("%s[ERROR][HandleWebSocketConnections] Failed to send PeerConnection creation error over WebSocket: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, wsErr)
+		}
 		return
 	}
-	defer peerConnection.Close()
+	defer func() {
+		if err := peerConnection.Close(); err != nil {
+			log.Printf("%s[ERROR][HandleWebSocketConnections] Error closing PeerConnection: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+		}
+		log.Printf("%s[INFO][HandleWebSocketConnections] PeerConnection closed. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
+	}()
 
-	// Use a WaitGroup to wait for ICE gathering to complete before sending the answer
-	// This is a common pattern.
-	var iceGatheringComplete sync.WaitGroup
-	iceGatheringComplete.Add(1) // For the OnICEGatheringDone event
+	initialDetails := map[string]string{
+		"remote_address": conn.RemoteAddr().String(),
+		"user_agent":     r.UserAgent(),
+	}
+	err = smClient.RegisterSession(sessionID, "WebRTC", initialDetails)
+	if err != nil {
+		log.Printf("%s[ERROR][HandleWebSocketConnections] Error registering session with Session Manager: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+		wsErr := conn.WriteJSON(SignalMessage{Type: "error", Payload: fmt.Sprintf("Session registration failed: %v", err)})
+		if wsErr != nil {
+			log.Printf("%s[ERROR][HandleWebSocketConnections] Failed to send session registration error over WebSocket: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, wsErr)
+		}
+		return
+	}
+	log.Printf("%s[INFO][HandleWebSocketConnections] Session registered successfully with Session Manager. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
+	var sessionActive bool
 
-	// (Conceptual) Register session
-	smClient.RegisterSession(sessionID, map[string]string{"type": "webrtc", "remoteAddr": sessionID})
+	defer func() {
+		log.Printf("%s[INFO][HandleWebSocketConnections] Deregistering session with Session Manager. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
+		if err := smClient.DeregisterSession(sessionID); err != nil {
+			log.Printf("%s[ERROR][HandleWebSocketConnections] Error deregistering session: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+		} else {
+			log.Printf("%s[INFO][HandleWebSocketConnections] Session deregistered successfully. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
+		}
+	}()
 
-	// Set up OnICECandidate handler
-	// This sends candidates back to the client
 	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate == nil {
+			log.Printf("%s[DEBUG][OnICECandidate] Nil candidate received, usually means ICE gathering is complete. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
 			return
 		}
 		candidateJSON, err := json.Marshal(candidate.ToJSON())
 		if err != nil {
-			log.Printf("Error marshalling ICE candidate: %v", err)
+			log.Printf("%s[ERROR][OnICECandidate] Error marshalling ICE candidate: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
 			return
 		}
+		log.Printf("%s[INFO][OnICECandidate] Sending ICE candidate: SessionID=%s, Candidate=%s", WebRTCGatewayLogPrefix, sessionID, string(candidateJSON))
 		if err := conn.WriteJSON(SignalMessage{Type: "candidate", Payload: string(candidateJSON)}); err != nil {
-			log.Printf("Error sending ICE candidate over WebSocket: %v", err)
-		} else {
-			log.Printf("Sent ICE candidate: %s", string(candidateJSON))
+			log.Printf("%s[ERROR][OnICECandidate] Error sending ICE candidate over WebSocket: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
 		}
 	})
-	
-	peerConnection.OnICEGatheringDone(func() {
-        iceGatheringComplete.Done()
-		log.Println("ICE Gathering Complete.")
-    })
 
-
-	// Set up OnTrack handler
-	// This is where you would handle incoming media streams
-	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		log.Printf("Received remote track: Kind %s, Codec %s, SSRC %d, ID %s, StreamID %s\n",
-			track.Kind(), track.Codec().MimeType, track.SSRC(), track.ID(), track.StreamID())
-		// In a real application, you would read from the track here.
-		// For example, if it's an audio track, you might forward it to another service
-		// or process it. For now, we just log its properties.
-		// go func() {
-		// 	buffer := make([]byte, 1500)
-		// 	for {
-		// 		_, _, readErr := track.Read(buffer)
-		// 		if readErr != nil {
-		// 			log.Printf("Error reading from track %s: %v", track.ID(), readErr)
-		// 			return
-		// 		}
-		// 		// Do something with the buffer
-		// 	}
-		// }()
+	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		log.Printf("%s[INFO][OnICEConnectionStateChange] ICE Connection State changed: SessionID=%s, State=%s", WebRTCGatewayLogPrefix, sessionID, state.String())
+		switch state {
+		case webrtc.ICEConnectionStateConnected:
+			log.Printf("%s[INFO][OnICEConnectionStateChange] ICE Connected. Session is active. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
+			if !sessionActive {
+				err := smClient.UpdateSessionState(sessionID, "active")
+				if err != nil {
+					log.Printf("%s[ERROR][OnICEConnectionStateChange] Error updating session state to active: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+				} else {
+					log.Printf("%s[INFO][OnICEConnectionStateChange] Session state updated to active. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
+					sessionActive = true
+				}
+			}
+		case webrtc.ICEConnectionStateFailed, webrtc.ICEConnectionStateDisconnected, webrtc.ICEConnectionStateClosed:
+			log.Printf("%s[INFO][OnICEConnectionStateChange] ICE Disconnected/Failed/Closed. SessionID: %s, State: %s. Closing WebSocket.", WebRTCGatewayLogPrefix, sessionID, state.String())
+			conn.Close() // Triggers deferred DeregisterSession
+		}
 	})
 
-	// Handle incoming messages from the WebSocket client
+	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		log.Printf("%s[INFO][OnTrack] Received remote track: SessionID=%s, Kind=%s, Codec=%s, SSRC=%d, ID=%s, StreamID=%s",
+			WebRTCGatewayLogPrefix, sessionID, track.Kind(), track.Codec().MimeType, track.SSRC(), track.ID(), track.StreamID())
+	})
+
 	for {
 		var msg SignalMessage
 		err := conn.ReadJSON(&msg)
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket error: %v", err)
+			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+				log.Printf("%s[INFO][HandleWebSocketConnections] WebSocket connection closed gracefully or as expected: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
 			} else {
-				log.Printf("WebSocket connection closed: %v", err)
+				log.Printf("%s[WARN][HandleWebSocketConnections] Error reading JSON from WebSocket: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
 			}
-			// (Conceptual) Deregister session
-			smClient.DeregisterSession(sessionID)
-			break
+			break 
 		}
 
-		log.Printf("Received WebSocket message: Type=%s", msg.Type)
+		log.Printf("%s[INFO][HandleWebSocketConnections] Received WebSocket message: SessionID=%s, Type=%s", WebRTCGatewayLogPrefix, sessionID, msg.Type)
 
 		switch msg.Type {
 		case "offer":
 			offer := webrtc.SessionDescription{}
 			if err := json.Unmarshal([]byte(msg.Payload), &offer); err != nil {
-				log.Printf("Error unmarshalling offer SDP: %v", err)
+				log.Printf("%s[ERROR][HandleWebSocketConnections][Offer] Error unmarshalling offer SDP: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
 				conn.WriteJSON(SignalMessage{Type: "error", Payload: "Invalid offer SDP"})
 				continue
 			}
 
-			log.Println("Received SDP Offer")
+			log.Printf("%s[INFO][HandleWebSocketConnections][Offer] Received SDP Offer. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
 			if err := peerConnection.SetRemoteDescription(offer); err != nil {
-				log.Printf("Error setting remote description (offer): %v", err)
-				conn.WriteJSON(SignalMessage{Type: "error", Payload: "Failed to set remote description"})
+				log.Printf("%s[ERROR][HandleWebSocketConnections][Offer] Error setting remote description: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+				conn.WriteJSON(SignalMessage{Type: "error", Payload: fmt.Sprintf("Failed to set remote description: %v", err)})
 				continue
 			}
 
 			answer, err := peerConnection.CreateAnswer(nil)
 			if err != nil {
-				log.Printf("Error creating answer SDP: %v", err)
-				conn.WriteJSON(SignalMessage{Type: "error", Payload: "Failed to create answer"})
+				log.Printf("%s[ERROR][HandleWebSocketConnections][Offer] Error creating answer SDP: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+				conn.WriteJSON(SignalMessage{Type: "error", Payload: fmt.Sprintf("Failed to create answer: %v", err)})
 				continue
 			}
-
-			// Sets the LocalDescription, and starts listining for UDP packets
-			// Block until ICE Gathering is complete, disabling trickle ICE
-			// This is not strictly required in all cases.
-			// For simplicity, we wait here. In a production system, you might handle candidates as they arrive (trickle ICE).
+			
 			gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
-
-
 			if err := peerConnection.SetLocalDescription(answer); err != nil {
-				log.Printf("Error setting local description (answer): %v", err)
-				conn.WriteJSON(SignalMessage{Type: "error", Payload: "Failed to set local description"})
+				log.Printf("%s[ERROR][HandleWebSocketConnections][Offer] Error setting local description: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+				conn.WriteJSON(SignalMessage{Type: "error", Payload: fmt.Sprintf("Failed to set local description: %v", err)})
 				continue
 			}
 			
-			// Wait for ICE gathering to complete
-			<-gatherComplete // This replaces the iceGatheringComplete.Wait() for this specific flow.
-			// iceGatheringComplete.Wait() // Wait for all candidates to be gathered (if not using trickle ICE for answer)
+			<-gatherComplete 
 			
-			log.Println("Created SDP Answer, ICE gathering complete.")
+			log.Printf("%s[INFO][HandleWebSocketConnections][Offer] Created SDP Answer, ICE gathering complete. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
 			answerPayload, err := json.Marshal(peerConnection.LocalDescription())
 			if err != nil {
-				log.Printf("Error marshalling answer SDP: %v", err)
+				log.Printf("%s[ERROR][HandleWebSocketConnections][Offer] Error marshalling answer SDP: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
 				conn.WriteJSON(SignalMessage{Type: "error", Payload: "Failed to marshal answer"})
 				continue
 			}
 
+			log.Printf("%s[INFO][HandleWebSocketConnections][Offer] Sending SDP Answer. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
 			if err := conn.WriteJSON(SignalMessage{Type: "answer", Payload: string(answerPayload)}); err != nil {
-				log.Printf("Error sending answer SDP over WebSocket: %v", err)
-			} else {
-				log.Println("Sent SDP Answer")
+				log.Printf("%s[ERROR][HandleWebSocketConnections][Offer] Error sending answer SDP over WebSocket: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
 			}
 
 		case "candidate":
 			candidate := webrtc.ICECandidateInit{}
 			if err := json.Unmarshal([]byte(msg.Payload), &candidate); err != nil {
-				log.Printf("Error unmarshalling ICE candidate: %v", err)
+				log.Printf("%s[ERROR][HandleWebSocketConnections][Candidate] Error unmarshalling ICE candidate: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
 				conn.WriteJSON(SignalMessage{Type: "error", Payload: "Invalid ICE candidate"})
 				continue
 			}
 
-			log.Printf("Received ICE Candidate: %v", candidate.Candidate)
+			log.Printf("%s[INFO][HandleWebSocketConnections][Candidate] Received ICE Candidate: SessionID=%s, Candidate=%s", WebRTCGatewayLogPrefix, sessionID, candidate.Candidate)
 			if err := peerConnection.AddICECandidate(candidate); err != nil {
-				log.Printf("Error adding ICE candidate: %v", err)
-				conn.WriteJSON(SignalMessage{Type: "error", Payload: "Failed to add ICE candidate"})
+				log.Printf("%s[ERROR][HandleWebSocketConnections][Candidate] Error adding ICE candidate: SessionID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, err)
+				conn.WriteJSON(SignalMessage{Type: "error", Payload: fmt.Sprintf("Failed to add ICE candidate: %v", err)})
 				continue
 			}
-			log.Println("Added ICE Candidate")
+			log.Printf("%s[INFO][HandleWebSocketConnections][Candidate] Added ICE Candidate. SessionID: %s", WebRTCGatewayLogPrefix, sessionID)
 		
 		default:
-			log.Printf("Received unknown message type: %s", msg.Type)
+			log.Printf("%s[WARN][HandleWebSocketConnections] Received unknown message type: SessionID=%s, Type=%s", WebRTCGatewayLogPrefix, sessionID, msg.Type)
 			conn.WriteJSON(SignalMessage{Type: "error", Payload: "Unknown message type"})
 		}
 	}

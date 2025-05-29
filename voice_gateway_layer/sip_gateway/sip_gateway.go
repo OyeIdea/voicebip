@@ -2,6 +2,7 @@ package sip_gateway
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -11,117 +12,137 @@ import (
 )
 
 // DummySessionManagerClient is a placeholder implementation for SessionManagerClient.
+// This can be removed if no longer used by tests directly, or kept for basic tests.
 type DummySessionManagerClient struct{}
 
-func (d *DummySessionManagerClient) RegisterSession(callID string, sessionDetails map[string]string) error {
-	log.Printf("SESSION_MANAGER_CLIENT: Registering session for Call-ID: %s, Details: %v\n", callID, sessionDetails)
+func (d *DummySessionManagerClient) RegisterSession(callID string, sessionType string, details map[string]string) error {
+	log.Printf("%s[INFO][DummySMClient][RegisterSession] CallID: %s, Type: %s, Details: %v", SipGatewayLogPrefix, callID, sessionType, details)
+	return nil
+}
+
+func (d *DummySessionManagerClient) UpdateSessionState(callID string, state string) error {
+	log.Printf("%s[INFO][DummySMClient][UpdateSessionState] CallID: %s, State: %s", SipGatewayLogPrefix, callID, state)
 	return nil
 }
 
 func (d *DummySessionManagerClient) DeregisterSession(callID string) error {
-	log.Printf("SESSION_MANAGER_CLIENT: Deregistering session for Call-ID: %s\n", callID)
+	log.Printf("%s[INFO][DummySMClient][DeregisterSession] CallID: %s", SipGatewayLogPrefix, callID)
 	return nil
 }
 
+// ErrSIPParseError represents an error during SIP message parsing.
+var ErrSIPParseError = errors.New("SIP message parse error")
+
 // parseSIPRequest parses a raw SIP message.
 func parseSIPRequest(data []byte) (*SIPRequest, error) {
+	// log.Printf("%s[DEBUG][parseSIPRequest] Attempting to parse SIP request data: %s", SipGatewayLogPrefix, string(data))
 	req := &SIPRequest{
 		Headers: make(map[string]string),
 	}
-	
+
 	// Find the end of the request line
 	firstLineEnd := bytes.Index(data, []byte("\r\n"))
 	if firstLineEnd == -1 {
-		return nil, fmt.Errorf("invalid SIP request: no CRLF found for request line")
+		errMsg := "no CRLF found for request line"
+		log.Printf("%s[ERROR][parseSIPRequest] Invalid SIP request: %s", SipGatewayLogPrefix, errMsg)
+		return nil, fmt.Errorf("%w: %s", ErrSIPParseError, errMsg)
 	}
 	requestLine := string(data[:firstLineEnd])
 	parts := strings.Split(requestLine, " ")
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid SIP request line: %s", requestLine)
+		errMsg := fmt.Sprintf("invalid SIP request line format: '%s'", requestLine)
+		log.Printf("%s[ERROR][parseSIPRequest] %s", SipGatewayLogPrefix, errMsg)
+		return nil, fmt.Errorf("%w: %s", ErrSIPParseError, errMsg)
 	}
 	req.Method = parts[0]
-	// For simplicity, we're not fully parsing the URI struct here.
-	// req.RequestURI = &url.URL{Path: parts[1]} 
-	req.RequestURI, _ = parseURI(parts[1]) // Store as string for now
+
+	parsedURI, err := parseURI(parts[1])
+	if err != nil {
+		log.Printf("%s[ERROR][parseSIPRequest] Failed to parse URI '%s': %v", SipGatewayLogPrefix, parts[1], err)
+		return nil, fmt.Errorf("%w: failed to parse URI: %v", ErrSIPParseError, err)
+	}
+	req.RequestURI = parsedURI
 	req.SIPVersion = parts[2]
 
 	// Parse headers
-	headerSection := data[firstLineEnd+2:]
-	currentLineStart := 0
-	for currentLineStart < len(headerSection) {
-		lineEnd := bytes.Index(headerSection[currentLineStart:], []byte("\r\n"))
-		if lineEnd == -1 { // Should end with an empty line
-			if len(bytes.TrimSpace(headerSection[currentLineStart:])) == 0 {
-				break // End of headers
+	headerData := data[firstLineEnd+2:]
+	currentPos := 0
+	for currentPos < len(headerData) {
+		lineEnd := bytes.Index(headerData[currentPos:], []byte("\r\n"))
+		if lineEnd == -1 {
+			if len(bytes.TrimSpace(headerData[currentPos:])) == 0 {
+				break
 			}
-			return nil, fmt.Errorf("invalid SIP headers: missing CRLF")
+			errMsg := "invalid SIP headers: missing CRLF after a header line"
+			log.Printf("%s[ERROR][parseSIPRequest] %s. Data: %s", SipGatewayLogPrefix, errMsg, string(headerData[currentPos:]))
+			return nil, fmt.Errorf("%w: %s", ErrSIPParseError, errMsg)
 		}
-		if lineEnd == 0 { // Empty line indicates end of headers
-			// Check for body
-			if len(headerSection) > currentLineStart+2 {
-				req.Body = headerSection[currentLineStart+2:]
+		if lineEnd == 0 {
+			bodyStart := currentPos + 2
+			if bodyStart < len(headerData) {
+				req.Body = headerData[bodyStart:]
 			}
 			break
 		}
 
-		line := string(headerSection[currentLineStart : currentLineStart+lineEnd])
+		line := string(headerData[currentPos : currentPos+lineEnd])
 		headerParts := strings.SplitN(line, ":", 2)
 		if len(headerParts) == 2 {
 			headerName := strings.TrimSpace(headerParts[0])
 			headerValue := strings.TrimSpace(headerParts[1])
 			req.Headers[headerName] = headerValue
 		} else {
-			// Could be a multi-line header, not handling for simplicity
+			log.Printf("%s[WARN][parseSIPRequest] Malformed header line (no colon): '%s'", SipGatewayLogPrefix, line)
 		}
-		currentLineStart += lineEnd + 2 // Move to the start of the next line
+		currentPos += lineEnd + 2
 	}
+	// log.Printf("%s[DEBUG][parseSIPRequest] Successfully parsed SIP request: Method=%s, URI=%s, HeadersCount=%d", SipGatewayLogPrefix, req.Method, req.RequestURI, len(req.Headers))
 	return req, nil
 }
 
 // parseURI is a simplified URI parser for SIP.
 func parseURI(uriStr string) (*net.UDPAddr, error) {
-    // This is a very basic parser, assuming sip:user@host:port or sip:host:port
-    // A proper implementation would use a full URI parsing library.
-    trimmed := strings.TrimPrefix(uriStr, "<")
-    trimmed = strings.TrimSuffix(trimmed, ">")
-    if strings.HasPrefix(trimmed, "sip:") {
-        trimmed = trimmed[4:]
-    }
-    
-    parts := strings.Split(trimmed, "@")
-    hostPortStr := parts[len(parts)-1] // Take the last part, which should be host:port
+	// log.Printf("%s[DEBUG][parseURI] Attempting to parse URI: %s", SipGatewayLogPrefix, uriStr)
+	trimmedURI := strings.TrimPrefix(uriStr, "<")
+	trimmedURI = strings.TrimSuffix(trimmedURI, ">")
+	if strings.HasPrefix(trimmedURI, "sip:") {
+		trimmedURI = trimmedURI[4:]
+	}
 
-    host, portStr, err := net.SplitHostPort(hostPortStr)
-    if err != nil {
-        // If SplitHostPort fails, maybe it's just a host without a port (default 5060)
-        // Or it could be an IP address without a port.
-        // For simplicity, let's try to resolve it as a host and assume default port
-        // This is not robust for production.
-        addr, resolveErr := net.ResolveUDPAddr("udp", net.JoinHostPort(hostPortStr, "5060"))
-        if resolveErr != nil {
-            return nil, fmt.Errorf("failed to parse host/port or resolve address %s: %v, original error: %v", hostPortStr, resolveErr, err)
-        }
-        return addr, nil
-    }
+	atParts := strings.Split(trimmedURI, "@")
+	hostPortPart := atParts[len(atParts)-1]
 
-    port, err := strconv.Atoi(portStr)
-    if err != nil {
-        return nil, fmt.Errorf("invalid port in URI %s: %v", uriStr, err)
-    }
+	host, portStr, err := net.SplitHostPort(hostPortPart)
+	if err != nil {
+		// log.Printf("%s[DEBUG][parseURI] SplitHostPort failed for '%s' (err: %v), trying with default port 5060", SipGatewayLogPrefix, hostPortPart, err)
+		addr, resolveErr := net.ResolveUDPAddr("udp", net.JoinHostPort(hostPortPart, "5060"))
+		if resolveErr != nil {
+			log.Printf("%s[ERROR][parseURI] Failed to resolve address '%s' with default port: %v (original SplitHostPort err: %v)", SipGatewayLogPrefix, hostPortPart, resolveErr, err)
+			return nil, fmt.Errorf("failed to parse host/port or resolve address '%s': %w (original: %v)", hostPortPart, resolveErr, err)
+		}
+		// log.Printf("%s[DEBUG][parseURI] Successfully parsed URI '%s' with default port: %s", SipGatewayLogPrefix, uriStr, addr.String())
+		return addr, nil
+	}
 
-    // Resolve IP address for the host
-    ipAddr, err := net.ResolveIPAddr("ip", host)
-    if err != nil {
-        // Try to see if host itself is an IP
-        ip := net.ParseIP(host)
-        if ip == nil {
-             return nil, fmt.Errorf("could not resolve host %s: %v", host, err)
-        }
-         return &net.UDPAddr{IP: ip, Port: port}, nil
-    }
-    return &net.UDPAddr{IP: ipAddr.IP, Port: port}, nil
+	port, convErr := strconv.Atoi(portStr)
+	if convErr != nil {
+		log.Printf("%s[ERROR][parseURI] Invalid port in URI '%s': %v", SipGatewayLogPrefix, uriStr, convErr)
+		return nil, fmt.Errorf("invalid port in URI '%s': %w", uriStr, convErr)
+	}
+
+	ipAddr, resolveErr := net.ResolveIPAddr("ip", host)
+	if resolveErr != nil {
+		ip := net.ParseIP(host)
+		if ip == nil {
+			log.Printf("%s[ERROR][parseURI] Could not resolve host '%s': %v", SipGatewayLogPrefix, host, resolveErr)
+			return nil, fmt.Errorf("could not resolve host '%s': %w", host, resolveErr)
+		}
+		// log.Printf("%s[DEBUG][parseURI] Host '%s' is an IP, using it directly.", SipGatewayLogPrefix, host)
+		return &net.UDPAddr{IP: ip, Port: port}, nil
+	}
+	// log.Printf("%s[DEBUG][parseURI] Successfully parsed URI '%s': %s:%d", SipGatewayLogPrefix, uriStr, ipAddr.IP.String(), port)
+	return &net.UDPAddr{IP: ipAddr.IP, Port: port}, nil
 }
-
 
 // generateResponse creates a string representation of a SIP response.
 func generateResponse(statusCode int, statusText string, request *SIPRequest, otherHeaders map[string]string) string {
@@ -224,11 +245,24 @@ func StartSIPGateway(cfg SIPConfig, smClient SessionManagerClient) {
 			}
 			log.Printf("Sent 100 Trying to %s\n", remoteAddr.String())
 
-			// Conceptual session registration
-			smClient.RegisterSession(request.Headers[HeaderCallID], map[string]string{
-				"from": request.Headers[HeaderFrom],
-				"to":   request.Headers[HeaderTo],
-			})
+			// Register session with the session manager
+			sessionDetails := map[string]string{
+				"from":           request.Headers[HeaderFrom],
+				"to":             request.Headers[HeaderTo],
+				"remote_address": remoteAddr.String(),
+			}
+			err = smClient.RegisterSession(request.Headers[HeaderCallID], "SIP", sessionDetails)
+			if err != nil {
+				log.Printf("Error registering session with Session Manager for Call-ID %s: %v", request.Headers[HeaderCallID], err)
+				// Send 500 Server Internal Error if registration fails
+				errorResponse := generateResponse(500, "Server Internal Error - Session Registration Failed", request, nil)
+				_, writeErr := conn.WriteToUDP([]byte(errorResponse), remoteAddr)
+				if writeErr != nil {
+					log.Printf("Error sending 500 Server Internal Error: %v", writeErr)
+				}
+				continue // Skip further processing for this INVITE
+			}
+			log.Printf("Successfully registered session for Call-ID: %s with Session Manager", request.Headers[HeaderCallID])
 
 			// Send 180 Ringing (after a slight delay to simulate processing)
 			// In a real scenario, this would happen upon some external trigger or internal logic.
@@ -243,7 +277,17 @@ func StartSIPGateway(cfg SIPConfig, smClient SessionManagerClient) {
 
 			// Simulate call being answered after a delay
 			// In a real scenario, this would be triggered by the callee picking up.
-			time.Sleep(500 * time.Millisecond) 
+			time.Sleep(500 * time.Millisecond)
+
+			// Update session state to "active" in session manager
+			err = smClient.UpdateSessionState(request.Headers[HeaderCallID], "active")
+			if err != nil {
+				log.Printf("Error updating session state to active for Call-ID %s: %v", request.Headers[HeaderCallID], err)
+				// Non-fatal for the call flow, but log it. The call can proceed.
+			} else {
+				log.Printf("Successfully updated session state to active for Call-ID: %s", request.Headers[HeaderCallID])
+			}
+
 			okHeaders := map[string]string{
 				HeaderContact: fmt.Sprintf("<sip:%s:%d>", cfg.ListenAddress, cfg.ListenPort), // Our contact
 			}
@@ -258,15 +302,21 @@ func StartSIPGateway(cfg SIPConfig, smClient SessionManagerClient) {
 
 		case "ACK":
 			log.Printf("Received ACK for Call-ID: %s\n", request.Headers[HeaderCallID])
-			// Usually, no response is sent for ACK in this context.
 			// The ACK confirms the 200 OK for INVITE.
+			// Session state is already 'active'. No further state update needed here from ACK itself.
 			// RTP session would be active.
 
 		case "BYE":
 			log.Printf("Received BYE for Call-ID: %s\n", request.Headers[HeaderCallID])
-			
-			// Conceptual session deregistration
-			smClient.DeregisterSession(request.Headers[HeaderCallID])
+
+			// Deregister session from the session manager
+			err = smClient.DeregisterSession(request.Headers[HeaderCallID])
+			if err != nil {
+				log.Printf("Error deregistering session with Session Manager for Call-ID %s: %v", request.Headers[HeaderCallID], err)
+				// Non-fatal for BYE processing, proceed to send 200 OK for BYE.
+			} else {
+				log.Printf("Successfully deregistered session for Call-ID: %s with Session Manager", request.Headers[HeaderCallID])
+			}
 
 			// Send 200 OK for BYE
 			byeOkResponse := generateResponse(200, "OK", request, nil)
@@ -287,8 +337,10 @@ func StartSIPGateway(cfg SIPConfig, smClient SessionManagerClient) {
 }
 
 // main function to run the gateway (example usage)
+// main function to run the gateway (example usage)
 // func main() {
 // 	cfg := LoadConfig()
-// 	var smClient SessionManagerClient = &DummySessionManagerClient{} // Use dummy client
+// 	// Initialize the actual HTTP client for the session manager
+// 	smClient := NewHTTPMeetingSessionManagerClient(cfg.SessionManagerAPIEndpoint)
 // 	StartSIPGateway(cfg, smClient)
 // }

@@ -8,82 +8,71 @@ Go is chosen for its suitability in building high-performance, concurrent networ
 
 ## Core Functions (Conceptual)
 
-*   **Signaling Server**: Manages the exchange of session control messages (like SDP offers/answers and ICE candidates) between WebRTC peers. This is often implemented using WebSockets.
-*   **ICE/STUN/TURN Handling**: Facilitates NAT (Network Address Translation) traversal to establish direct peer-to-peer media connections where possible, using STUN for NAT discovery and TURN for relaying media if direct connection fails.
+*   **Signaling Server**: Manages the exchange of session control messages (like SDP offers/answers and ICE candidates) between WebRTC peers using WebSockets.
+*   **ICE/STUN/TURN Handling**: Facilitates NAT traversal.
 *   **Peer Connection Management**: Establishes, monitors, and tears down WebRTC peer connections.
-*   **Data Channel Management**: (Optional) Can manage WebRTC data channels for sending non-media data alongside audio/video.
-*   **Media Stream Handling**: Receives incoming RTP media streams from WebRTC clients and forwards them to the Real-Time Processing Engine (e.g., `StreamingDataManager`), and vice-versa for outgoing audio.
+*   **Session Lifecycle Management**: Integrates with the `session_manager` service via its HTTP API to register, update, and deregister WebRTC sessions.
+*   **Media Stream Handling**: Receives incoming RTP media streams and (future) forwards them to the Real-Time Processing Engine.
 
 ## Components
 
-*   `webrtc_gateway.go`: Contains the `StartWebRTCGateway` function, which initializes and starts the HTTP server for WebSocket signaling.
-*   `config.go`: Defines the `WebRTCConfig` struct (ListenAddress, SignalPort, StunServers) and `LoadConfig` function for service configuration.
-*   `signal.go`: Implements the WebSocket signaling handler (`HandleWebSocketConnections`). This includes logic for handling "offer", "answer", and "candidate" messages, and interacting with the `pion/webrtc` PeerConnection. It also defines the `SignalMessage` struct and a conceptual `SessionManagerClient` interface with a dummy implementation.
-*   `webrtc_gateway_test.go`: Contains unit tests for `SignalMessage` marshalling/unmarshalling and a basic test for the WebSocket offer/answer signaling flow using a test server.
-*   `handlers/`: (Placeholder directory) Intended for Go files containing more detailed logic for WebSocket connections or specific signaling protocol messages. *(This directory is not yet used in the current basic implementation).*
+*   `webrtc_gateway.go`: Contains `StartWebRTCGateway` which initializes the HTTP server for WebSocket signaling and the `SessionManagerClient`.
+*   `config.go`: Defines `WebRTCConfig` (ListenAddress, SignalPort, StunServers, `SessionManagerAPIEndpoint`) and `LoadConfig`. `LoadConfig` now reads from environment variables with fallbacks.
+*   `signal.go`: Implements `HandleWebSocketConnections` for WebSocket signaling. It handles WebRTC negotiation (offer/answer, ICE candidates) and interacts with the `session_manager` service.
+*   `session_client.go`: Implements `HTTPMeetingSessionManagerClient`, a client for the `session_manager`'s HTTP API. Defines the `SessionManagerClient` interface.
+*   `webrtc_gateway_test.go`: Contains unit tests, including tests for interaction with a mock `session_manager` HTTP server.
+*   `handlers/`: (Placeholder directory).
 
 ## Implemented Functionality
 
-The current implementation provides a basic WebRTC gateway with WebSocket-based signaling:
-
 *   **Configuration (`config.go`):**
-    *   `WebRTCConfig` struct:
-        *   `ListenAddress` (string): The IP address for the signaling server to listen on (e.g., "0.0.0.0").
-        *   `SignalPort` (int): The TCP port for the WebSocket signaling server (e.g., 8080).
-        *   `StunServers` ([]string): A list of STUN server URLs (e.g., "stun:stun.l.google.com:19302").
-    *   `LoadConfig()` function: Returns a default `WebRTCConfig`.
+    *   `WebRTCConfig` struct includes `ListenAddress`, `SignalPort`, `StunServers`, and `SessionManagerAPIEndpoint`.
+    *   `LoadConfig()` loads these parameters from environment variables (see "Configuration via Environment Variables" section below) with hardcoded defaults if variables are not set.
 
-*   **Signaling (`signal.go`):**
-    *   Uses `github.com/gorilla/websocket` to upgrade HTTP connections to WebSockets.
-    *   `SignalMessage` struct (`{Type string, Payload string}`) is used for exchanging messages.
-    *   **WebSocket Handler (`HandleWebSocketConnections`):**
-        *   Establishes a WebSocket connection.
-        *   Creates a new `webrtc.PeerConnection` using `github.com/pion/webrtc/v3` for each client.
-        *   **Offer Handling**:
-            1.  When a "offer" `SignalMessage` is received:
-            2.  The offer SDP (JSON string in `Payload`) is unmarshalled.
-            3.  A new `webrtc.PeerConnection` is created.
-            4.  (Conceptual) Logs registration with `SessionManagerClient`.
-            5.  `OnICECandidate` callback is set up: Sends any gathered ICE candidates as "candidate" `SignalMessage`s back to the client over WebSocket.
-            6.  `OnTrack` callback is set up: Logs information about the received remote media track (kind, codec, SSRC, etc.). Actual media processing is a placeholder.
-            7.  The client's offer is set as the remote description on the `PeerConnection`.
-            8.  An answer SDP is created by the `PeerConnection`.
-            9.  The answer is set as the local description.
-            10. The answer SDP is marshalled to JSON and sent back to the client as an "answer" `SignalMessage`. ICE gathering is awaited before sending the answer (non-trickle ICE for answer).
-        *   **ICE Candidate Handling**:
-            1.  When a "candidate" `SignalMessage` is received:
-            2.  The ICE candidate (JSON string in `Payload`) is unmarshalled.
-            3.  The candidate is added to the `PeerConnection`.
-        *   **Disconnection**:
-            1.  If the WebSocket connection closes or an error occurs, the event is logged.
-            2.  (Conceptual) Logs deregistration with `SessionManagerClient`.
+*   **Signaling & WebRTC Core (`signal.go`):**
+    *   Uses `github.com/gorilla/websocket` and `github.com/pion/webrtc/v3`.
+    *   `HandleWebSocketConnections`:
+        *   Generates a unique session ID (UUID).
+        *   Handles SDP "offer", "answer", and ICE "candidate" messages.
+        *   Sets up `OnICECandidate`, `OnICEConnectionStateChange`, and `OnTrack` callbacks.
+
+*   **Session Management Integration (`session_client.go`, `signal.go`, `webrtc_gateway.go`):**
+    *   `HTTPMeetingSessionManagerClient` interacts with the `session_manager`'s HTTP API.
+    *   `RegisterSession` called on new WebSocket connection. Failure results in WebSocket error and closure.
+    *   `UpdateSessionState` to "active" called on `ICEConnectionStateConnected`. Failures are logged.
+    *   `DeregisterSession` called deferred on WebSocket handler exit. Failures are logged.
+
+*   **Error Handling & Logging:**
+    *   **Structured Logging**: Log messages across `webrtc_gateway.go`, `signal.go`, and `session_client.go` follow the format `[WEBRTC_GATEWAY][LEVEL][Function/Context] Message. Details...`.
+    *   **Session Manager Client Errors**: Errors from `HTTPMeetingSessionManagerClient` are logged with details. Critical errors like `RegisterSession` failure result in an error message sent over WebSocket and connection termination.
+    *   **Pion WebRTC API Errors**: Errors from `pion/webrtc` calls are logged with context.
+    *   **WebSocket Errors**: Errors during WebSocket operations are logged.
+    *   **Critical Errors**: Fatal errors in `StartWebRTCGateway` are logged and cause the service to exit.
 
 *   **Gateway Initialization (`webrtc_gateway.go`):**
-    *   `StartWebRTCGateway(cfg WebRTCConfig, smClient SessionManagerClient)`:
-        *   Initializes the `webrtc.Configuration` with STUN servers from `cfg.StunServers`.
-        *   Sets up an HTTP route (`/ws`) to the `HandleWebSocketConnections` function.
-        *   Starts an HTTP server on the address and port specified in `cfg`.
+    *   `StartWebRTCGateway(cfg WebRTCConfig)` initializes clients and the HTTP server with structured logging.
 
-*   **Session Management (Conceptual):**
-    *   A `SessionManagerClient` interface is defined in `signal.go` (`RegisterSession`, `DeregisterSession`).
-    *   A `DummyWebRTCSessionManagerClient` is used to log calls to these interface methods, simulating interaction with a session management component.
+*   **Testing (`webrtc_gateway_test.go`):**
+    *   Includes `mockWebRTCSessionManagerServer`.
+    *   `TestWebSocketSignaling_OfferAnswer_WithSessionManager` tests interactions with the mock session manager.
 
-*   **Media Handling (Placeholder):**
-    *   The `OnTrack` callback logs details of incoming media tracks.
-    *   Actual processing, forwarding, or recording of media is not implemented. The gateway primarily sets up the communication channel.
+## Configuration via Environment Variables
+
+The service can be configured using the following environment variables. If an environment variable is not set or is empty, a default value will be used.
+
+*   **`WEBRTC_LISTEN_ADDRESS`**: The IP address for the WebRTC gateway's signaling server to listen on.
+    *   Default: `"0.0.0.0"`
+*   **`WEBRTC_SIGNAL_PORT`**: The TCP port for the WebSocket signaling server.
+    *   Default: `8080`
+*   **`WEBRTC_STUN_SERVERS`**: A comma-separated list of STUN server URLs (e.g., `"stun:stun.l.google.com:19302,stun:another.stun.server:19302"`).
+    *   Default: `"stun:stun.l.google.com:19302"`
+*   **`WEBRTC_SESSION_MANAGER_API_ENDPOINT`**: The HTTP endpoint for the `session_manager` service.
+    *   Default: `"http://localhost:8000"`
 
 ## Interaction with Other System Components
 
-1.  **Client Connection & Signaling**:
-    *   A web or mobile client initiates a WebSocket connection to the WebRTC Gateway's `/ws` endpoint.
-    *   Signaling messages (SDP offers/answers, ICE candidates) are exchanged between the client and the gateway to negotiate the WebRTC session.
-2.  **Peer Connection Establishment**:
-    *   The `WebRTCGatewayService` uses ICE (with STUN servers specified in its configuration) to facilitate NAT traversal and establish a media path with the client.
-3.  **Media Flow**:
-    *   Once the peer connection is established, encrypted RTP media (audio/video) flows between the client and the gateway.
-    *   **Incoming Audio**: The gateway receives audio from the client (logged by `OnTrack`) and (Future) would forward it to the `StreamingDataManager` in the Real-Time Processing Engine.
-    *   **Outgoing Audio**: (Future) Text responses from Dialogue Management would be synthesized by the `TextToSpeechService`. This audio would then be packetized by the WebRTC Gateway and sent to the client via the established peer connection.
-4.  **Session Teardown**: When the call ends (WebSocket disconnects), (Conceptual) the session is logged as deregistered.
+1.  **`session_manager` Service**: Via its HTTP API for session lifecycle management.
+2.  **Web Clients**: Connect via WebSocket for signaling and establish WebRTC peer connections for media.
+3.  **(Future) `StreamingDataManager`**: Would receive media from `OnTrack`.
 
-This service relies on `github.com/pion/webrtc/v3` for WebRTC functionalities and `github.com/gorilla/websocket` for WebSocket communication.
-The `go.mod` and `go.sum` files in the `voice_gateway_layer` directory manage these dependencies.
+The `go.mod` and `go.sum` files in `voice_gateway_layer` manage dependencies.

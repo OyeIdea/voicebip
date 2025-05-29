@@ -3,9 +3,13 @@ package session_manager
 import (
 	"bytes"
 	"encoding/json"
+	"bytes"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -42,8 +46,8 @@ func TestCreateSession(t *testing.T) {
 
 	// Test creating a session with an existing ID
 	_, err = store.CreateSession("sess1", "WebRTC", nil)
-	if err == nil {
-		t.Error("Expected error when creating session with duplicate ID, got nil")
+	if !errors.Is(err, ErrSessionExists) { // Check for specific error
+		t.Errorf("Expected ErrSessionExists when creating session with duplicate ID, got %v", err)
 	}
 }
 
@@ -60,8 +64,8 @@ func TestGetSession(t *testing.T) {
 	}
 
 	_, err = store.GetSession("nonexistent")
-	if err == nil {
-		t.Error("Expected error when getting non-existent session, got nil")
+	if !errors.Is(err, ErrSessionNotFound) { // Check for specific error
+		t.Errorf("Expected ErrSessionNotFound when getting non-existent session, got %v", err)
 	}
 }
 
@@ -81,8 +85,8 @@ func TestUpdateSessionState(t *testing.T) {
 	}
 
 	_, err = store.UpdateSessionState("nonexistent", StateActive)
-	if err == nil {
-		t.Error("Expected error when updating non-existent session, got nil")
+	if !errors.Is(err, ErrSessionNotFound) { // Check for specific error
+		t.Errorf("Expected ErrSessionNotFound when updating non-existent session, got %v", err)
 	}
 }
 
@@ -104,7 +108,7 @@ func TestUpdateSessionDetails(t *testing.T) {
 	if updatedSession.UpdatedAt.IsZero() || updatedSession.UpdatedAt == updatedSession.CreatedAt {
 		t.Error("UpdatedAt should be modified")
 	}
-	
+
 	// Test updating details for a session that initially had nil details
 	store.CreateSession("sess2", "SIP", nil)
 	detailsForSess2 := map[string]string{"k": "v"}
@@ -116,10 +120,9 @@ func TestUpdateSessionDetails(t *testing.T) {
 		t.Errorf("Expected Details %v for sess2, got %v", detailsForSess2, updatedSess2.Details)
 	}
 
-
 	_, err = store.UpdateSessionDetails("nonexistent", newDetails)
-	if err == nil {
-		t.Error("Expected error when updating details of non-existent session, got nil")
+	if !errors.Is(err, ErrSessionNotFound) { // Check for specific error
+		t.Errorf("Expected ErrSessionNotFound when updating details of non-existent session, got %v", err)
 	}
 }
 
@@ -133,13 +136,13 @@ func TestDeleteSession(t *testing.T) {
 	}
 
 	_, err = store.GetSession("sess1")
-	if err == nil {
-		t.Error("Expected error when getting deleted session, got nil")
+	if !errors.Is(err, ErrSessionNotFound) { // Check for specific error
+		t.Errorf("Expected ErrSessionNotFound when getting deleted session, got %v", err)
 	}
 
 	err = store.DeleteSession("nonexistent")
-	if err == nil {
-		t.Error("Expected error when deleting non-existent session, got nil")
+	if !errors.Is(err, ErrSessionNotFound) { // Check for specific error
+		t.Errorf("Expected ErrSessionNotFound when deleting non-existent session, got %v", err)
 	}
 }
 
@@ -166,8 +169,8 @@ func setupAPITests() {
 	testStore.CreateSession("existingSess1", "SIP", map[string]string{"caller": "123", "callee": "456"})
 	testStore.CreateSession("existingSess2", "WebRTC", map[string]string{"user": "testuser"})
 
+	// Re-initialize mux for each test suite run if tests modify global state (not the case here with testStore re-init)
 	mux := http.NewServeMux()
-	// Simplified routing from api.go for testing
 	mux.HandleFunc("/sessions", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			handleCreateSession(w, r, testStore)
@@ -226,13 +229,13 @@ func TestAPI_CreateSession(t *testing.T) {
 		t.Errorf("Expected detail client=browser, got %v", createdSession.Details)
 	}
 	
-	// Test duplicate creation
+	// Test duplicate creation (expecting 409 Conflict)
 	resp2, err := http.Post(testServer.URL+"/sessions", "application/json", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		t.Fatalf("HTTP POST (duplicate) failed: %v", err)
 	}
 	defer resp2.Body.Close()
-	if resp2.StatusCode != http.StatusConflict {
+	if resp2.StatusCode != http.StatusConflict { // Check for 409
 		t.Errorf("Expected status 409 Conflict for duplicate, got %d", resp2.StatusCode)
 	}
 }
@@ -259,13 +262,13 @@ func TestAPI_GetSession(t *testing.T) {
 		t.Errorf("Expected session ID existingSess1, got %s", session.ID)
 	}
 
-	// Test Not Found
+	// Test Not Found (expecting 404)
 	respNotFound, err := http.Get(testServer.URL + "/sessions/nonexistentSession")
 	if err != nil {
 		t.Fatalf("HTTP GET (not found) failed: %v", err)
 	}
 	defer respNotFound.Body.Close()
-	if respNotFound.StatusCode != http.StatusNotFound {
+	if respNotFound.StatusCode != http.StatusNotFound { // Check for 404
 		t.Errorf("Expected status 404 Not Found, got %d", respNotFound.StatusCode)
 	}
 }
@@ -296,6 +299,18 @@ func TestAPI_UpdateSessionState(t *testing.T) {
 	}
 	if updatedSession.State != StateActive {
 		t.Errorf("Expected state %s, got %s", StateActive, updatedSession.State)
+	}
+
+	// Test Not Found for update
+	reqNotFound, _ := http.NewRequest(http.MethodPut, testServer.URL+"/sessions/nonexistentSession/state", bytes.NewBuffer(payloadBytes))
+	reqNotFound.Header.Set("Content-Type", "application/json")
+	respNotFound, err := http.DefaultClient.Do(reqNotFound)
+	if err != nil {
+		t.Fatalf("HTTP PUT /state (not found) failed: %v", err)
+	}
+	defer respNotFound.Body.Close()
+	if respNotFound.StatusCode != http.StatusNotFound {
+		t.Errorf("Expected status 404 Not Found for update on non-existent session, got %d", respNotFound.StatusCode)
 	}
 }
 
@@ -328,6 +343,18 @@ func TestAPI_UpdateSessionDetails(t *testing.T) {
 	if updatedSession.Details["newDetail"] != "added" {
 		t.Errorf("Expected detail newDetail=added, got %s", updatedSession.Details["newDetail"])
 	}
+
+	// Test Not Found for update
+	reqNotFound, _ := http.NewRequest(http.MethodPut, testServer.URL+"/sessions/nonexistentSession/details", bytes.NewBuffer(payloadBytes))
+	reqNotFound.Header.Set("Content-Type", "application/json")
+	respNotFound, err := http.DefaultClient.Do(reqNotFound)
+	if err != nil {
+		t.Fatalf("HTTP PUT /details (not found) failed: %v", err)
+	}
+	defer respNotFound.Body.Close()
+	if respNotFound.StatusCode != http.StatusNotFound {
+		t.Errorf("Expected status 404 Not Found for update on non-existent session, got %d", respNotFound.StatusCode)
+	}
 }
 
 
@@ -352,4 +379,15 @@ func TestAPI_DeleteSession(t *testing.T) {
 		t.Errorf("Expected status 404 Not Found after delete, got %d", getResp.StatusCode)
 	}
 	getResp.Body.Close()
+
+	// Test Not Found for delete
+	reqNotFound, _ := http.NewRequest(http.MethodDelete, testServer.URL+"/sessions/nonexistentSession", nil)
+	respNotFound, err := http.DefaultClient.Do(reqNotFound)
+	if err != nil {
+		t.Fatalf("HTTP DELETE (not found) failed: %v", err)
+	}
+	defer respNotFound.Body.Close()
+	if respNotFound.StatusCode != http.StatusNotFound {
+		t.Errorf("Expected status 404 Not Found for delete on non-existent session, got %d", respNotFound.StatusCode)
+	}
 }
