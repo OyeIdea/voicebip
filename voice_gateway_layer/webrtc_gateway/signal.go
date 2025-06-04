@@ -145,33 +145,50 @@ func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConn
 					// Note: For WebRTC, RTP packet data is directly the audio data for codecs like Opus.
 					// No separate RTP header stripping is typically needed here as Pion handles it.
 
-					// AudioFormat Handling Notes for OPUS:
-					// WebRTC commonly uses the Opus codec for audio, which is a compressed format.
-					// The AudioSegment below correctly marks the audio_format as OPUS.
+					// --- OPUS DECODING PLACEHOLDER ---
+					// WebRTC commonly uses Opus, a compressed format. However, downstream STT services
+					// often expect uncompressed PCM (e.g., L16 or PCMU). The following section
+					// outlines where Opus decoding would occur. For now, raw Opus data is passed through,
+					// but the AudioSegment is marked as PCMU to simulate the intended pipeline format.
+					// This is for testing pipeline flow and NOT a functional audio conversion.
+					// TODO: Initialize Opus decoder here.
+					// For example, using a library like github.com/pion/opus:
+					// decoder, err := opus.NewDecoder(48000, 1) // Assuming 48kHz sample rate, 1 channel for Opus
+					// if err != nil {
+					//     log.Printf("%s[ERROR][OnTrack][Audio] Failed to create Opus decoder: %v", WebRTCGatewayLogPrefix, err)
+					//     return
+					// }
+
+				rtpBuf := make([]byte, 1500) // Standard MTU size for RTP
+				var sequenceNumber uint32 = 0
+				for {
+					n, _, readErr := track.Read(rtpBuf)
+					if readErr != nil {
+						log.Printf("%s[ERROR][OnTrack][Audio] Error reading from track: SessionID=%s, TrackID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, track.ID(), readErr)
+						return // Stop processing this track
+					}
+
+					// TODO: Decode Opus packet (rtpBuf[:n]) to PCM here.
+					// pcmData := make([]int16, 1024) // Adjust buffer size as needed
+					// nSamples, err := decoder.Decode(rtpBuf[:n], pcmData)
+					// if err != nil {
+					//     log.Printf("%s[ERROR][OnTrack][Audio] Failed to decode Opus packet: %v", WebRTCGatewayLogPrefix, err)
+					//     continue // Skip this packet
+					// }
 					//
-					// IMPORTANT CONSIDERATION FOR DOWNSTREAM STT:
-					// Many Speech-to-Text (STT) services, especially those designed for live
-					// streaming and high accuracy (like Deepgram when not in a simulated mode),
-					// expect uncompressed audio data, typically Linear PCM (e.g., L16).
-					//
-					// Therefore, for a production pipeline involving such an STT service,
-					// the Opus audio received here would need to be DECODED to PCM
-					// before being sent to that STT engine. This decoding could potentially
-					// happen:
-					//    1. Within this WebRTC Gateway before creating the AudioSegment.
-					//    2. In an intermediate audio processing microservice.
-					//    3. Potentially in the StreamingDataManager if it's designed for such tasks.
-					//
-					// For current testing purposes, especially if the downstream STT is
-					// simulated or if it's an STT service that explicitly supports direct
-					// Opus ingestion (less common for live streaming APIs), sending the
-					// OPUS format directly is acceptable for verifying pipeline flow.
+					// // For this example, we'll assume the decoded PCM is 8kHz, 16-bit, 1-channel mu-law (PCMU)
+					// // This would require further processing/conversion from the raw PCM output of the decoder.
+					// // For simplicity in this placeholder, we'll use the original rtpBuf data
+					// // but mark it as PCMU, acknowledging this is not a true decode + transcode.
+					// // A more complete implementation would convert nSamples of pcmData into a PCMU byte array.
+					decodedAudioData := rtpBuf[:n] // Placeholder: Should be actual decoded PCM data
+
 					segment := &real_time_processing.AudioSegment{
 						SessionId:      sessionID,
 						Timestamp:      time.Now().UnixMilli(),
-						AudioFormat:    real_time_processing.AudioFormat_OPUS, // Assuming Opus for WebRTC
+						AudioFormat:    real_time_processing.AudioFormat_LINEAR16, // Placeholder: Assuming Opus is decoded to LINEAR16 PCM (e.g., 16000 Hz, 16-bit signed)
 						SequenceNumber: sequenceNumber,
-						Data:           rtpBuf[:n], // Use the actual read bytes
+						Data:           decodedAudioData, // Use the (conceptually) decoded audio data
 						IsFinal:        false,      // VAD will determine this later
 					}
 					sendAudioSegmentToSdmWebRTC(segment)

@@ -57,7 +57,11 @@ Go is chosen for its suitability in building high-performance, concurrent networ
     *   `TestWebSocketSignaling_OfferAnswer_WithSessionManager` tests interactions with the mock session manager.
 
 ### Opus Audio Handling
-The WebRTC gateway forwards Opus-encoded audio packets as received from the client to the `StreamingDataManager`. While this is suitable for pipeline flow testing with simulated or Opus-aware STT services, most real-time STT engines (like the intended Deepgram integration for `SpeechToTextService`) expect uncompressed PCM audio (e.g., Linear16). Therefore, for full integration with such STT services, Opus decoding will need to be implemented. This decoding could potentially occur within this gateway, in an intermediate audio processing service, or be a capability of the `StreamingDataManager` or `SpeechToTextService` in the future. Currently, the `AudioSegment` correctly identifies the format as OPUS.
+The WebRTC gateway receives Opus-encoded RTP packets from the client via the `OnTrack` callback. The current implementation includes **placeholders and comments** in `signal.go` that outline where Opus decoding to PCM (specifically Linear16, e.g., at 16kHz, 16-bit signed) would be implemented, potentially using a Go Opus library like `github.com/pion/opus`.
+
+Currently, for pipeline testing and development **without actual Opus decoding implemented yet**, the raw Opus packet data is still what's packaged into the `AudioSegment`'s data field. However, to facilitate downstream service configuration and testing, the `AudioSegment`'s `audio_format` field is now explicitly set to `LINEAR16`. This **simulates** the audio format that *would* be produced after the conceptual decoding step.
+
+This approach allows services like the `SpeechToTextService` to be configured for the target `LINEAR16` PCM format. For a production system that needs to connect to STT engines expecting uncompressed PCM, **implementing the actual Opus decoding at the marked placeholders in `signal.go` is a crucial next step.**
 
 ## Configuration via Environment Variables
 

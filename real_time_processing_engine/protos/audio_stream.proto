@@ -9,6 +9,7 @@ enum AudioFormat {
   PCMU = 1;
   PCMA = 2;
   OPUS = 3;
+  LINEAR16 = 4; // Raw PCM, typically 16-bit signed integer
 }
 
 message AudioSegment {

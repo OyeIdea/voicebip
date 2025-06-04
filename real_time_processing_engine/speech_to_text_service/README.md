@@ -54,6 +54,6 @@ The service requires a Deepgram API key to function.
 
 ## Important Notes on Current Implementation
 *   **Async Bridging:** The Deepgram SDK is asynchronous. The gRPC servicer methods are synchronous. The current implementation uses `asyncio.run_coroutine_threadsafe` and a dedicated asyncio event loop running in a separate thread to manage Deepgram's async operations.
-*   **Audio Format Handling:** The service attempts to map `AudioFormat` enum values to Deepgram encoding options. Proper handling of Opus (which requires decoding before sending to Deepgram live streams) and other formats is critical and may require additional processing steps not yet implemented.
+*   **Audio Format Handling**: The service is configured to receive PCM audio. It expects `PCMU` (8kHz mulaw) from the `sip_gateway` and `LINEAR16` (typically 16kHz) from the `webrtc_gateway` (which is expected to decode Opus to LINEAR16 before sending). The `SpeechToTextService` sets Deepgram `LiveOptions` (encoding and sample rate) accordingly. It no longer directly handles `OPUS` formatted `AudioSegment`s from the gateways, as decoding is now planned to occur upstream.
 *   **Error Handling:** Basic error handling for Deepgram connection and timeouts is included. More comprehensive error management would be needed for a production system.
 *   **Session Management:** The service manages Deepgram connections per `session_id`. Cleanup of these connections on server shutdown is handled via `atexit`.

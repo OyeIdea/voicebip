@@ -112,16 +112,10 @@ class SpeechToTextServicer(audio_stream_pb2_grpc.SpeechToTextServicer):
                     # A better approach is to ensure correct encoding string if supported, or transcode.
                     encoding = "mulaw"
                     sample_rate = 8000
-                elif audio_format_enum == audio_stream_pb2.AudioFormat.Value('OPUS'):
-                    # Deepgram's live streaming typically expects raw audio like PCM, not compressed Opus.
-                    # This means Opus would need to be decoded *before* sending to Deepgram.
-                    # This is a significant gap if Opus is directly sent.
-                    # For now, this will likely lead to errors or poor transcription if Opus bytes are sent.
-                    # A real implementation would need an Opus decoder here.
-                    # Setting to linear16 as a placeholder if Opus was decoded.
-                    print(f"Warning: Received OPUS format for {session_id}. Deepgram expects uncompressed audio. Assuming pre-decoded to linear16 for now.")
-                    encoding = "linear16" # Assuming Opus is decoded to PCM elsewhere. This is key.
-                    sample_rate = 16000 # Common for Opus wideband
+                elif audio_format_enum == audio_stream_pb2.AudioFormat.Value('LINEAR16'):
+                    encoding = "linear16"
+                    sample_rate = 16000 # Standard rate for high-quality PCM from decoded Opus
+                    # channels = 1 (already default)
 
                 options = LiveOptions(
                     model="nova-2",

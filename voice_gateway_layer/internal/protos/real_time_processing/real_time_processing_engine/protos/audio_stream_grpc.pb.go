@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.3.0
 // - protoc             v3.21.12
-// source: audio_stream.proto
+// source: real_time_processing_engine/protos/audio_stream.proto
 
 package real_time_processing
 
@@ -105,7 +105,7 @@ var StreamIngest_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "audio_stream.proto",
+	Metadata: "real_time_processing_engine/protos/audio_stream.proto",
 }
 
 const (
@@ -197,5 +197,5 @@ var SpeechToText_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "audio_stream.proto",
+	Metadata: "real_time_processing_engine/protos/audio_stream.proto",
 }
