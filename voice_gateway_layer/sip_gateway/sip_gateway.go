@@ -7,8 +7,13 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"context"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure" // For grpc.WithTransportCredentials
+	"revovoiceai/voice_gateway_layer/internal/protos/real_time_processing"
 )
 
 // DummySessionManagerClient is a placeholder implementation for SessionManagerClient.
@@ -279,6 +284,32 @@ func StartSIPGateway(cfg SIPConfig, smClient SessionManagerClient) {
 			// In a real scenario, this would be triggered by the callee picking up.
 			time.Sleep(500 * time.Millisecond)
 
+			// Simulate receiving RTP packets
+			// In a real implementation, this would be a separate goroutine or callback handling actual RTP data.
+			// For now, we'll just simulate a few packets after the call is established.
+			go func(callID string, remoteAddr *net.UDPAddr) {
+				// This is a placeholder for actual RTP packet handling.
+				// In a real system, you'd receive RTP packets from remoteAddr (or a negotiated media port).
+				// For now, let's simulate a few packets.
+				for i := 0; i < 5; i++ { // Simulate 5 RTP packets
+					time.Sleep(20 * time.Millisecond) // Simulate RTP packet interval
+
+					// Create a dummy RTP payload
+					dummyRTPPayload := []byte(fmt.Sprintf("RTP Packet %d for %s", i+1, callID))
+
+					// Populate AudioSegment
+					segment := &real_time_processing.AudioSegment{
+						SessionId:      callID,
+						Timestamp:      time.Now().UnixMilli(),
+						AudioFormat:    real_time_processing.AudioFormat_PCMU, // Assuming PCMU for this example
+						SequenceNumber: uint32(i + 1),
+						Data:           dummyRTPPayload,
+						IsFinal:        false,
+					}
+					sendAudioSegmentToSdm(segment)
+				}
+			}(request.Headers[HeaderCallID], remoteAddr)
+
 			// Update session state to "active" in session manager
 			err = smClient.UpdateSessionState(request.Headers[HeaderCallID], "active")
 			if err != nil {
@@ -344,3 +375,32 @@ func StartSIPGateway(cfg SIPConfig, smClient SessionManagerClient) {
 // 	smClient := NewHTTPMeetingSessionManagerClient(cfg.SessionManagerAPIEndpoint)
 // 	StartSIPGateway(cfg, smClient)
 // }
+
+// sendAudioSegmentToSdm logs the audio segment.
+// In a real system, this would send the segment to the Stream Dialog Manager (SDM) via gRPC.
+func sendAudioSegmentToSdm(segment *real_time_processing.AudioSegment) {
+	// Target for StreamingDataManager gRPC service
+	sdmAddress := "localhost:50051"
+
+	// Set up a connection to the server.
+	// Using grpc.WithTransportCredentials(insecure.NewCredentials()) instead of grpc.WithInsecure() for newer gRPC versions.
+	conn, err := grpc.Dial(sdmAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		log.Printf("SIPGateway: Failed to connect to StreamingDataManager at %s: %v", sdmAddress, err)
+		return
+	}
+	defer conn.Close()
+
+	client := real_time_processing.NewStreamIngestClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5) // 5-second timeout for the call
+	defer cancel()
+
+	// log.Printf("SIPGateway: Sending AudioSegment to SDM: SID=%s, Seq=%d", segment.SessionId, segment.SequenceNumber)
+	response, err := client.IngestAudioSegment(ctx, segment)
+	if err != nil {
+		log.Printf("SIPGateway: Error calling IngestAudioSegment on StreamingDataManager: %v", err)
+		return
+	}
+
+	log.Printf("SIPGateway: Received response from StreamingDataManager: SID=%s, Seq=%d, Status='%s'", response.GetSessionId(), response.GetSequenceNumber(), response.GetStatusMessage())
+}

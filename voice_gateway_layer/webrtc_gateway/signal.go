@@ -5,11 +5,20 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/google/uuid" // For generating unique session IDs
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"revovoiceai/voice_gateway_layer/internal/protos/real_time_processing"
 )
 
 // SignalMessage defines the structure for messages exchanged over WebSocket.
@@ -118,6 +127,36 @@ func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConn
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		log.Printf("%s[INFO][OnTrack] Received remote track: SessionID=%s, Kind=%s, Codec=%s, SSRC=%d, ID=%s, StreamID=%s",
 			WebRTCGatewayLogPrefix, sessionID, track.Kind(), track.Codec().MimeType, track.SSRC(), track.ID(), track.StreamID())
+
+		// Handle audio tracks
+		if track.Kind() == webrtc.RTPCodecTypeAudio {
+			go func() {
+				// Buffer for incoming RTP packets
+				rtpBuf := make([]byte, 1500) // Standard MTU size for RTP
+				var sequenceNumber uint32 = 0
+				for {
+					n, _, readErr := track.Read(rtpBuf)
+					if readErr != nil {
+						log.Printf("%s[ERROR][OnTrack][Audio] Error reading from track: SessionID=%s, TrackID=%s, Error=%v", WebRTCGatewayLogPrefix, sessionID, track.ID(), readErr)
+						return // Stop processing this track
+					}
+
+					// Create and populate AudioSegment
+					// Note: For WebRTC, RTP packet data is directly the audio data for codecs like Opus.
+					// No separate RTP header stripping is typically needed here as Pion handles it.
+					segment := &real_time_processing.AudioSegment{
+						SessionId:      sessionID,
+						Timestamp:      time.Now().UnixMilli(),
+						AudioFormat:    real_time_processing.AudioFormat_OPUS, // Assuming Opus for WebRTC
+						SequenceNumber: sequenceNumber,
+						Data:           rtpBuf[:n], // Use the actual read bytes
+						IsFinal:        false,      // VAD will determine this later
+					}
+					sendAudioSegmentToSdmWebRTC(segment)
+					sequenceNumber++
+				}
+			}()
+		}
 	})
 
 	for {
@@ -200,4 +239,29 @@ func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConn
 			conn.WriteJSON(SignalMessage{Type: "error", Payload: "Unknown message type"})
 		}
 	}
+}
+
+// sendAudioSegmentToSdmWebRTC logs the audio segment for WebRTC.
+// In a real system, this would send the segment to the Stream Dialog Manager (SDM) via gRPC.
+func sendAudioSegmentToSdmWebRTC(segment *real_time_processing.AudioSegment) {
+	sdmAddress := "localhost:50051"
+
+	conn, err := grpc.Dial(sdmAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		log.Printf("%s[ERROR][sendAudioSegmentToSdmWebRTC] Failed to connect to StreamingDataManager at %s: %v", WebRTCGatewayLogPrefix, sdmAddress, err)
+		return
+	}
+	defer conn.Close()
+
+	client := real_time_processing.NewStreamIngestClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	// log.Printf("%s[INFO][sendAudioSegmentToSdmWebRTC] Sending segment: SID=%s, Seq=%d", WebRTCGatewayLogPrefix, segment.SessionId, segment.SequenceNumber)
+	response, err := client.IngestAudioSegment(ctx, segment)
+	if err != nil {
+		log.Printf("%s[ERROR][sendAudioSegmentToSdmWebRTC] Error calling IngestAudioSegment: %v", WebRTCGatewayLogPrefix, err)
+		return
+	}
+	log.Printf("%s[INFO][sendAudioSegmentToSdmWebRTC] Received response from SDM: SID=%s, Seq=%d, Status='%s'", WebRTCGatewayLogPrefix, response.GetSessionId(), response.GetSequenceNumber(), response.GetStatusMessage())
 }

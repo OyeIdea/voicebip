@@ -1,86 +1,94 @@
 # real_time_processing_engine/speech_to_text_service/service.py
 
+import grpc
+from concurrent import futures
+import time # For the main loop of serve()
+
+# Import generated protobuf and gRPC modules
+import audio_stream_pb2
+import audio_stream_pb2_grpc
+
+class SpeechToTextServicer(audio_stream_pb2_grpc.SpeechToTextServicer):
+    """
+    Implements the SpeechToText gRPC service.
+    """
+    def TranscribeAudioSegment(self, request: audio_stream_pb2.AudioSegment, context):
+        """
+        Receives an audio segment for transcription.
+        """
+        print(f"SpeechToTextService: Received AudioSegment: SID={request.session_id}, Seq={request.sequence_number}, Format={request.audio_format}, DataLen={len(request.data)}, IsFinalReq={request.is_final}")
+
+        # Placeholder transcription logic
+        # In a real implementation, this would involve:
+        # 1. Converting audio data if necessary.
+        # 2. Feeding data to an STT engine.
+        # 3. Handling streaming transcription if `request.is_final` is false.
+
+        transcript_text = f"Placeholder transcript for segment {request.sequence_number} of session {request.session_id}."
+        if request.is_final:
+            transcript_text += " (Final)"
+
+        return audio_stream_pb2.TranscriptionResponse(
+            session_id=request.session_id,
+            sequence_number=request.sequence_number,
+            transcript=transcript_text,
+            is_final=True, # For this placeholder, we'll always return a final transcript
+            confidence=0.90
+        )
+
 class SpeechToTextService:
     """
     Service for converting speech to text.
-    This service can handle both streaming audio and individual audio chunks.
+    This class can hold STT models and configurations.
+    The gRPC servicer can instantiate or use this class.
     """
 
     def __init__(self, config=None):
         """
         Initializes the SpeechToTextService.
-
-        Args:
-            config: Configuration object or dictionary. 
-                    (Placeholder for future configuration loading, e.g., from config.py)
         """
         self.config = config
-        # Future initialization logic for STT models, clients, etc.
-        print("SpeechToTextService initialized.")
+        print("SpeechToTextService (business logic class) initialized.")
+
+    # Existing methods like transcribe_audio_stream and process_audio_chunk
+    # can be adapted or used by the gRPC servicer if needed.
+    # For this subtask, they are not directly called by the gRPC endpoint.
 
     def transcribe_audio_stream(self, audio_stream_uri: str, audio_format: str = "wav"):
-        """
-        Transcribes an audio stream from a given URI.
-
-        This method is intended for processing longer audio files or streams
-        where the entire audio is available before transcription starts.
-
-        Args:
-            audio_stream_uri (str): The URI of the audio stream to transcribe.
-                                    This could be a file path, a network stream URL, etc.
-            audio_format (str, optional): The format of the audio (e.g., "wav", "mp3"). 
-                                          Defaults to "wav".
-
-        Returns:
-            dict: A dictionary containing the transcribed text and potentially timestamps.
-                  Example: {"text": "Hello world.", "timestamps": [...]}
-                  (Actual return format will be defined with implementation)
-        """
         print(f"Transcription logic to be implemented for URI: {audio_stream_uri} with format: {audio_format}")
-        # Placeholder for actual transcription logic
-        # This would involve:
-        # 1. Accessing the audio stream from the URI.
-        # 2. Using an STT engine/model to process the audio.
-        # 3. Formatting the results.
-        pass
         return {"text": "Transcription placeholder", "timestamps": []}
 
     def process_audio_chunk(self, audio_chunk: bytes):
-        """
-        Processes an individual chunk of audio data.
-
-        This method is designed for real-time or near real-time transcription
-        where audio is received in chunks.
-
-        Args:
-            audio_chunk (bytes): The raw audio data chunk to process.
-
-        Returns:
-            dict: A dictionary containing the partial transcript for the chunk
-                  and potentially other information like speaker ID or confidence.
-                  (Actual return format will be defined with implementation)
-        """
         print(f"Processing audio chunk of size: {len(audio_chunk)} bytes")
-        # Placeholder for actual chunk processing logic
-        # This would involve:
-        # 1. Potentially buffering audio chunks.
-        # 2. Sending the chunk to an STT engine capable of streaming.
-        # 3. Returning intermediate transcription results.
-        pass
         return {"text": "Partial transcript placeholder"}
 
-# Example usage (optional, for testing or demonstration)
-if __name__ == "__main__":
-    stt_service = SpeechToTextService()
+def serve():
+    """
+    Starts the gRPC server for the SpeechToTextService.
+    """
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    audio_stream_pb2_grpc.add_SpeechToTextServicer_to_server(SpeechToTextServicer(), server)
     
-    # Example of transcribing a stream (conceptual)
-    # Replace with actual URI and format if testing
-    uri = "path/to/your/audio.wav" 
-    transcription_result = stt_service.transcribe_audio_stream(audio_stream_uri=uri)
-    print(f"Stream transcription result: {transcription_result}")
+    listen_addr = '[::]:50052' # Listen on a different port than StreamingDataManager
+    server.add_insecure_port(listen_addr)
 
-    # Example of processing an audio chunk (conceptual)
-    # Replace with actual audio data if testing
-    dummy_audio_chunk = b'\x00\x00\x00\x00' * 1000 # Example: 4000 bytes of silence
-    chunk_result = stt_service.process_audio_chunk(audio_chunk=dummy_audio_chunk)
-    print(f"Chunk processing result: {chunk_result}")
+    print(f"SpeechToTextService gRPC server starting on {listen_addr}")
+    server.start()
+    print(f"Server started. Waiting for termination...")
+    try:
+        while True:
+            time.sleep(86400) # Keep the main thread alive
+    except KeyboardInterrupt:
+        print("Server stopping...")
+        server.stop(0)
+        print("Server stopped.")
+
+if __name__ == "__main__":
+    # Initialize the business logic class if needed by the servicer,
+    # or pass configuration to the servicer.
+    # For this placeholder, the servicer is simple and self-contained.
+    # stt_logic_instance = SpeechToTextService()
+    # servicer_instance = SpeechToTextServicer(stt_logic=stt_logic_instance)
+    # Then use servicer_instance when adding to server.
+
+    serve()

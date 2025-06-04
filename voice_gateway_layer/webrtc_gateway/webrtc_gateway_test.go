@@ -11,11 +11,106 @@ import (
 	"testing"
 	"time"
 
+	"context"
+	"net"
+
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/codes"
+	"revovoiceai/voice_gateway_layer/internal/protos/real_time_processing"
 )
+
+// MockStreamIngestClient is a mock implementation of StreamIngestClient.
+// This can be shared if Go test files can import from other test files,
+// or duplicated if not. For simplicity, duplicating the definition.
+type MockStreamIngestClient struct {
+	real_time_processing.StreamIngestClient // Embed the interface
+	mu        sync.Mutex
+	Req       *real_time_processing.AudioSegment
+	Resp      *real_time_processing.IngestResponse
+	Err       error
+	called    bool
+}
+
+func (m *MockStreamIngestClient) IngestAudioSegment(ctx context.Context, in *real_time_processing.AudioSegment, opts ...grpc.CallOption) (*real_time_processing.IngestResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.called = true
+	m.Req = in
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	if m.Resp == nil {
+		return &real_time_processing.IngestResponse{
+			SessionId:      in.SessionId,
+			SequenceNumber: in.SequenceNumber,
+			StatusMessage:  "Mock WebRTC response",
+		}, nil
+	}
+	return m.Resp, nil
+}
+
+// sendAudioSegmentToSdmWebRTCTestable is a wrapper for testing.
+func sendAudioSegmentToSdmWebRTCTestable(client real_time_processing.StreamIngestClient, segment *real_time_processing.AudioSegment) (*real_time_processing.IngestResponse, error) {
+	// Mirrors the logic in the actual sendAudioSegmentToSdmWebRTC but uses a provided client.
+	response, err := client.IngestAudioSegment(context.Background(), segment)
+	if err != nil {
+		log.Printf("%s[ERROR][sendAudioSegmentToSdmWebRTCTestable] Error calling IngestAudioSegment: %v", WebRTCGatewayLogPrefix, err)
+		return nil, err
+	}
+	log.Printf("%s[INFO][sendAudioSegmentToSdmWebRTCTestable] Received response from SDM: SID=%s, Seq=%d, Status='%s'", WebRTCGatewayLogPrefix, response.GetSessionId(), response.GetSequenceNumber(), response.GetStatusMessage())
+	return response, nil
+}
+
+
+func TestSendAudioSegmentToSdmWebRTC(t *testing.T) {
+	mockClient := &MockStreamIngestClient{}
+
+	segment := &real_time_processing.AudioSegment{
+		SessionId:      "webrtc-session-789",
+		Timestamp:      time.Now().UnixMilli(),
+		AudioFormat:    real_time_processing.AudioFormat_OPUS,
+		SequenceNumber: 1,
+		Data:           []byte("dummy opus audio data"),
+		IsFinal:        false,
+	}
+
+	// Test success case
+	mockClient.Resp = &real_time_processing.IngestResponse{
+		SessionId:      segment.SessionId,
+		SequenceNumber: segment.SequenceNumber,
+		StatusMessage:  "Successfully ingested by mock (WebRTC)",
+	}
+	mockClient.Err = nil
+	mockClient.called = false
+
+	resp, err := sendAudioSegmentToSdmWebRTCTestable(mockClient, segment)
+	require.NoError(t, err, "sendAudioSegmentToSdmWebRTCTestable failed")
+	assert.True(t, mockClient.called, "Expected IngestAudioSegment to be called")
+	require.NotNil(t, mockClient.Req, "Mock client did not receive a request")
+	assert.Equal(t, segment.SessionId, mockClient.Req.SessionId)
+	assert.Equal(t, real_time_processing.AudioFormat_OPUS, mockClient.Req.AudioFormat)
+	require.NotNil(t, resp)
+	assert.Equal(t, "Successfully ingested by mock (WebRTC)", resp.StatusMessage)
+
+	// Test error case
+	mockClient.Err = status.Error(codes.Unavailable, "SDM service unavailable for WebRTC")
+	mockClient.Resp = nil
+	mockClient.called = false
+
+	_, err = sendAudioSegmentToSdmWebRTCTestable(mockClient, segment)
+	require.Error(t, err, "Expected an error when gRPC call fails")
+	assert.True(t, mockClient.called, "Expected IngestAudioSegment to be called even with error")
+
+	st, ok := status.FromError(err)
+	require.True(t, ok, "Error should be a gRPC status error")
+	assert.Equal(t, codes.Unavailable, st.Code())
+}
+
 
 // Mock Session Manager HTTP Server (similar to the one in sip_gateway_test)
 func mockWebRTCSessionManagerServer(t *testing.T, expectedType string, failRegister bool, failUpdateState bool, failDeregister bool) *httptest.Server {

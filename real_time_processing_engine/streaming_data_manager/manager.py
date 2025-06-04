@@ -1,165 +1,125 @@
 # real_time_processing_engine/streaming_data_manager/manager.py
 
+import grpc
+from concurrent import futures
+import time # For the main loop of serve()
+
+# Import generated protobuf and gRPC modules
+import audio_stream_pb2
+import audio_stream_pb2_grpc
+
 # Placeholder for actual import path resolution if these become proper packages
-# from ..speech_to_text_service.service import SpeechToTextService 
+# from ..speech_to_text_service.service import SpeechToTextService
 # For now, we'll assume SpeechToTextService would be passed in or available
 # in a way that doesn't require a direct runnable import here.
+
+class StreamIngestServicer(audio_stream_pb2_grpc.StreamIngestServicer):
+    """
+    Implements the StreamIngest gRPC service.
+    """
+    def __init__(self):
+        # Configuration for STT service endpoint
+        self.stt_service_address = 'localhost:50052' # Make this configurable in a real app
+
+    def IngestAudioSegment(self, request: audio_stream_pb2.AudioSegment, context):
+        """
+        Receives an audio segment from a client (e.g., Voice Gateway)
+        and forwards it to the SpeechToTextService.
+        """
+        print(f"StreamingDataManager: Received AudioSegment: SID={request.session_id}, Seq={request.sequence_number}, Format={request.audio_format}, DataLen={len(request.data)}, IsFinal={request.is_final}")
+
+        status_message = "Segment received by StreamingDataManager."
+
+        try:
+            # Create a channel and stub to call the SpeechToTextService
+            with grpc.insecure_channel(self.stt_service_address) as channel:
+                stub = audio_stream_pb2_grpc.SpeechToTextStub(channel)
+
+                # Forward the received AudioSegment to SpeechToTextService
+                # print(f"StreamingDataManager: Forwarding segment to STT service at {self.stt_service_address}")
+                stt_response = stub.TranscribeAudioSegment(request, timeout=10) # Adding a timeout
+
+                if stt_response:
+                    print(f"StreamingDataManager: Received transcription from STT: SID={stt_response.session_id}, Seq={stt_response.sequence_number}, Transcript='{stt_response.transcript}', IsFinal={stt_response.is_final}")
+                    status_message = "Segment received and forwarded to STT. STT Response: " + stt_response.transcript
+                else:
+                    print("StreamingDataManager: Received no response from STT service.")
+                    status_message = "Segment received, but no response from STT service."
+
+        except grpc.RpcError as e:
+            print(f"StreamingDataManager: Error calling SpeechToTextService: {e.code()} - {e.details()}")
+            status_message = f"Segment received, but failed to forward to STT: {e.details()}"
+            # Optionally, you could re-raise or handle specific error codes differently
+        except Exception as e:
+            print(f"StreamingDataManager: An unexpected error occurred while calling STT: {e}")
+            status_message = f"Segment received, but an unexpected error occurred during STT call: {e}"
+
+
+        return audio_stream_pb2.IngestResponse(
+            session_id=request.session_id,
+            sequence_number=request.sequence_number,
+            status_message=status_message
+        )
 
 class StreamingDataManager:
     """
     Manages audio streams for real-time processing.
     This includes registering, unregistering, fetching data from,
     and routing streams to other services like Speech-to-Text.
+    This class is currently not directly used by the gRPC servicer but can be for future stateful logic.
     """
 
     def __init__(self, stt_service=None):
         """
         Initializes the StreamingDataManager.
-
-        Args:
-            stt_service: An instance of SpeechToTextService or a similar
-                         service that can process audio data.
-                         (Placeholder for dependency injection)
         """
-        self.stt_service = stt_service
-        self._active_streams = {}  # To keep track of registered streams
-        print("StreamingDataManager initialized.")
+        self.stt_service = stt_service # This would be an instance of a client or logic class
+        self._active_streams = {}
+        print("StreamingDataManager (logic class) initialized.")
         if self.stt_service:
             print("STT Service instance provided.")
         else:
             print("No STT Service instance provided at init.")
 
+    # ... (other methods like register_stream, unregister_stream remain for now) ...
     def register_stream(self, stream_id: str, stream_source_info: dict):
-        """
-        Registers a new audio stream for processing.
-
-        Args:
-            stream_id (str): A unique identifier for the stream.
-            stream_source_info (dict): Information about the stream source.
-                                       e.g., {"uri": "rtsp://...", "credentials": {...}, "format": "pcm"}
-        
-        Returns:
-            bool: True if registration was successful, False otherwise.
-        """
         if stream_id in self._active_streams:
             print(f"Stream {stream_id} already registered.")
             return False
-        
         print(f"Registering stream: {stream_id} with source info: {stream_source_info}")
-        # Placeholder for actual stream registration logic
-        # This might involve:
-        # 1. Validating stream_source_info.
-        # 2. Establishing a connection to the stream source (if applicable).
-        # 3. Storing stream metadata.
-        self._active_streams[stream_id] = {
-            "source_info": stream_source_info,
-            "status": "registered" 
-        }
+        self._active_streams[stream_id] = {"source_info": stream_source_info, "status": "registered"}
         return True
 
     def unregister_stream(self, stream_id: str):
-        """
-        Unregisters an existing audio stream.
-
-        Args:
-            stream_id (str): The unique identifier of the stream to unregister.
-
-        Returns:
-            bool: True if unregistration was successful, False otherwise.
-        """
         if stream_id not in self._active_streams:
             print(f"Stream {stream_id} not found for unregistration.")
             return False
-
         print(f"Unregistering stream: {stream_id}")
-        # Placeholder for actual stream unregistration logic
-        # This might involve:
-        # 1. Closing any open connections to the stream.
-        # 2. Cleaning up resources associated with the stream.
         del self._active_streams[stream_id]
         return True
 
-    def get_stream_data(self, stream_id: str, chunk_size: int) -> bytes | None:
-        """
-        Fetches a chunk of data from a registered stream.
-
-        Args:
-            stream_id (str): The identifier of the stream to fetch data from.
-            chunk_size (int): The desired size of the audio chunk in bytes.
-
-        Returns:
-            bytes | None: The audio data chunk as bytes, or None if the stream
-                          is not available, finished, or an error occurred.
-        """
-        if stream_id not in self._active_streams:
-            print(f"Stream {stream_id} not registered or active.")
-            return None
-
-        print(f"Fetching {chunk_size} bytes from stream: {stream_id}")
-        # Placeholder for actual data fetching logic
-        # This would involve:
-        # 1. Reading data from the source (e.g., a socket, file, buffer).
-        # 2. Handling potential errors or end-of-stream conditions.
-        # For now, returning a dummy chunk or None
-        # Example: return b'\x00' * chunk_size 
-        return None 
-
-    def route_stream_to_stt(self, stream_id: str):
-        """
-        Continuously fetches data from a stream and sends it to the STT service.
-
-        This method would typically run in a separate thread or asynchronous task
-        for each stream being routed.
-
-        Args:
-            stream_id (str): The identifier of the stream to route.
-        """
-        if stream_id not in self._active_streams:
-            print(f"Cannot route stream {stream_id}: not registered.")
-            return
-
-        if not self.stt_service:
-            print(f"Cannot route stream {stream_id}: STT service not available.")
-            return
-
-        print(f"Starting to route stream {stream_id} to STT service.")
-        # Placeholder for continuous routing logic
-        # This would involve a loop:
-        # while self._active_streams.get(stream_id): # Check if stream is still active
-        #     data_chunk = self.get_stream_data(stream_id, chunk_size=4096) # Example chunk size
-        #     if data_chunk:
-        #         self.stt_service.process_audio_chunk(data_chunk)
-        #     else:
-        #         # Handle end of stream or error
-        #         print(f"No data from stream {stream_id}, or stream ended. Stopping route.")
-        #         break
-        #     # Potentially add a small delay or use event-driven data fetching
-        # print(f"Stopped routing stream {stream_id} to STT service.")
-        pass
-
-# Example Usage (optional, for testing or demonstration)
-if __name__ == "__main__":
-    # from ..speech_to_text_service.service import SpeechToTextService # Would be needed here
+def serve():
+    """
+    Starts the gRPC server for the StreamingDataManager.
+    """
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    # The servicer is instantiated directly here.
+    # If it needed access to a StreamingDataManager instance, you'd pass it here.
+    audio_stream_pb2_grpc.add_StreamIngestServicer_to_server(StreamIngestServicer(), server)
     
-    # Dummy STT Service for example
-    class MockSpeechToTextService:
-        def process_audio_chunk(self, audio_chunk):
-            print(f"Mock STT: Received audio chunk of size {len(audio_chunk)}")
+    listen_addr = '[::]:50051'
+    server.add_insecure_port(listen_addr)
 
-    mock_stt = MockSpeechToTextService()
-    manager = StreamingDataManager(stt_service=mock_stt)
+    print(f"StreamingDataManager gRPC server starting on {listen_addr}")
+    server.start()
+    print(f"Server started. Waiting for termination...")
+    try:
+        while True:
+            time.sleep(86400)
+    except KeyboardInterrupt:
+        print("Server stopping...")
+        server.stop(0)
+        print("Server stopped.")
 
-    stream_info = {"uri": "rtsp://example.com/live/stream1", "format": "aac"}
-    manager.register_stream("stream1", stream_info)
-
-    manager.route_stream_to_stt("stream1") # Conceptual call
-
-    # Simulate fetching data - in reality, this would be part of route_stream_to_stt or a pull mechanism
-    # data = manager.get_stream_data("stream1", 1024)
-    # if data:
-    #    print(f"Retrieved data chunk of size: {len(data)}")
-    # else:
-    #    print("Failed to retrieve data or stream empty.")
-
-    manager.unregister_stream("stream1")
-    manager.unregister_stream("non_existent_stream")
+if __name__ == "__main__":
+    serve()
