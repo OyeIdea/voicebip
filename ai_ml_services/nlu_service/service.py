@@ -1,128 +1,87 @@
 # ai_ml_services/nlu_service/service.py
 
-class NLUService:
+import grpc
+from concurrent import futures
+import time # Required for server.wait_for_termination() in a loop, though not strictly for the current serve()
+
+# Import generated protobuf and gRPC modules
+# These should be in the same directory or Python path
+import nlu_service_pb2
+import nlu_service_pb2_grpc
+
+# The NLUService class below is the gRPC servicer.
+# The existing NLUService class (for business logic) can be kept if desired,
+# and the servicer could instantiate or use it. For this subtask,
+# the servicer will implement the logic directly as per instructions.
+
+class NLUServiceServicer(nlu_service_pb2_grpc.NLUServiceServicer):
     """
-    Natural Language Understanding (NLU) Service.
-    Responsible for processing text to extract intents, entities, manage context,
-    and perform other NLU tasks like sentiment analysis.
+    Implements the NLUService gRPC interface.
     """
-
-    def __init__(self, config=None):
+    def ProcessText(self, request: nlu_service_pb2.NLURequest, context):
         """
-        Initializes the NLUService.
-
-        Args:
-            config: Configuration object or dictionary.
-                    (Placeholder for future configuration loading, 
-                     e.g., model paths from config.py or models/ directory)
+        Processes a text input and returns NLU results.
         """
-        self.config = config
-        # Future initialization for NLU models, tokenizers, etc.
-        print("NLUService initialized.")
-
-    def _intent_recognition(self, text: str) -> dict:
-        """
-        Recognizes intents from the input text.
+        print(f"NLUService: Received text '{request.text}' for session_id '{request.session_id}'")
         
-        Args:
-            text (str): The input text.
-
-        Returns:
-            dict: A dictionary containing the recognized intent and confidence.
-                  Example: {"intent": "sample_intent", "confidence": 0.9}
-        """
-        print(f"NLU Service: Recognizing intent in text: '{text[:50]}...'")
-        # Placeholder for actual intent recognition logic
-        return {"intent": "sample_intent", "confidence": 0.9}
-
-    def _entity_extraction(self, text: str) -> dict:
-        """
-        Extracts entities from the input text.
-
-        Args:
-            text (str): The input text.
-
-        Returns:
-            dict: A dictionary containing the extracted entities.
-                  Example: {"entities": [{"type": "sample_entity", "value": "sample_value"}]}
-        """
-        print(f"NLU Service: Extracting entities from text: '{text[:50]}...'")
-        # Placeholder for actual entity extraction logic
-        return {"entities": [{"type": "sample_entity", "value": "sample_value"}]}
-
-    def _context_management(self, text: str, current_context: dict = None) -> dict:
-        """
-        Manages dialogue context based on input text and current context.
-
-        Args:
-            text (str): The input text (may not be directly used in this placeholder).
-            current_context (dict, optional): The current dialogue context. Defaults to None.
-
-        Returns:
-            dict: The updated dialogue context.
-        """
-        print(f"NLU Service: Managing context based on text: '{text[:50]}...' and current context: {current_context}")
-        # Placeholder for actual context management logic
-        if current_context:
-            updated_context = current_context.copy()
-            updated_context["previous_turn_processed"] = True
-            return updated_context
-        return {"initial_context_param": "initial_value"}
-
-    def process_text(self, text: str, context: dict = None) -> dict:
-        """
-        Processes input text to extract intents, entities, and manage context.
-
-        Args:
-            text (str): The input text to process.
-            context (dict, optional): The current dialogue context. Defaults to None.
-
-        Returns:
-            dict: A dictionary containing the NLU processing results, including
-                  the original text, recognized intent, extracted entities,
-                  updated context, and placeholder sentiment.
-        """
-        print(f"\nNLU Service: Processing text: '{text}'")
+        # Placeholder NLU logic
+        intent = "greeting"
+        intent_confidence = 0.95
+        entities = [
+            nlu_service_pb2.Entity(name="name", value="User", confidence=0.8)
+        ]
+        processed_text = request.text # Or some cleaned version
         
-        recognized_intent = self._intent_recognition(text)
-        extracted_entities = self._entity_extraction(text)
-        updated_context = self._context_management(text, context)
+        # Simple rule-based modification for demonstration
+        if "help" in request.text.lower():
+            intent = "get_help"
+            entities.append(nlu_service_pb2.Entity(name="topic", value="general", confidence=0.7))
+        elif "weather" in request.text.lower():
+            intent = "get_weather"
+            entities.append(nlu_service_pb2.Entity(name="query_type", value="general_weather", confidence=0.85))
+            if "tomorrow" in request.text.lower():
+                 entities.append(nlu_service_pb2.Entity(name="date", value="tomorrow", confidence=0.9))
         
-        # Placeholder for sentiment analysis
-        sentiment_result = {"label": "neutral", "score": 0.7}
-        
-        nlu_result = {
-            "text": text,
-            "intent": recognized_intent,
-            "entities": extracted_entities,
-            "context": updated_context,
-            "sentiment": sentiment_result 
-        }
-        
-        print(f"NLU Service: Processing complete. Result: {nlu_result}")
-        return nlu_result
+        print(f"NLUService: Intent='{intent}', Entities={entities}")
 
-# Example usage (optional, for testing or demonstration)
-if __name__ == "__main__":
-    nlu_service = NLUService()
+        return nlu_service_pb2.NLUResponse(
+            session_id=request.session_id,
+            intent=intent,
+            entities=entities,
+            processed_text=processed_text,
+            intent_confidence=intent_confidence
+        )
 
-    sample_text_1 = "Hello, I would like to order a pizza."
-    initial_context = {"user_id": "user123", "session_id": "sessionABC"}
+def serve():
+    """
+    Starts the gRPC server for the NLUService.
+    """
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    nlu_service_pb2_grpc.add_NLUServiceServicer_to_server(NLUServiceServicer(), server)
     
-    print("\n--- Example 1: First turn ---")
-    result_1 = nlu_service.process_text(sample_text_1, context=initial_context)
-    # print(f"Result 1: {result_1}")
+    port = "50053" # Define the port for NLU service
+    listen_addr = f'[::]:{port}'
+    server.add_insecure_port(listen_addr)
+    
+    server.start()
+    print(f"NLUService server started, listening on port {port}")
+    
+    try:
+        # Keep the server running until interrupted
+        # server.wait_for_termination() # This blocks indefinitely
+        while True:
+            time.sleep(86400) # Sleep for a day, effectively keeping the thread alive
+    except KeyboardInterrupt:
+        print("NLUService server stopping...")
+        server.stop(0) # Graceful stop
+        print("NLUService server stopped.")
 
-    sample_text_2 = "Yes, make it a large pepperoni."
-    # Use the context from the previous turn
-    context_from_result_1 = result_1.get("context") 
+# Main guard to run the server when the script is executed
+if __name__ == '__main__':
+    # The original NLUService class (business logic) can be instantiated here
+    # if the servicer needs to use it. For this task, it's not directly used by the servicer.
+    # e.g., nlu_logic_instance = NLUService()
+    # servicer = NLUServiceServicer(nlu_logic=nlu_logic_instance)
+    # and then pass `servicer` to add_NLUServiceServicer_to_server.
     
-    print("\n--- Example 2: Second turn (with context) ---")
-    result_2 = nlu_service.process_text(sample_text_2, context=context_from_result_1)
-    # print(f"Result 2: {result_2}")
-    
-    sample_text_3 = "What's the weather like today?"
-    
-    print("\n--- Example 3: Different query (no initial context) ---")
-    result_3 = nlu_service.process_text(sample_text_3)
-    # print(f"Result 3: {result_3}")
+    serve()
