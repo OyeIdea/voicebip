@@ -2,49 +2,58 @@
 
 ## Purpose
 
-This service is a core component of the RevoVoiceAI Real-Time Processing Engine. Its primary responsibility is to receive audio data (primarily via gRPC as audio segments), transcribe it into text, and then forward this text to the Natural Language Understanding (NLU) Service for further processing.
+This service is a core component of the RevoVoiceAI Real-Time Processing Engine. It uses the **Deepgram SDK** to perform real-time speech-to-text transcription. It's designed to receive audio segments (potentially as part of a continuous stream for a given session), transcribe them, and then forward the resulting transcript to the Natural Language Understanding (NLU) Service for further processing.
 
 ## Components
 
-*   `service.py`: Contains the main logic for the gRPC `SpeechToTextServicer`. This servicer handles incoming audio segments, generates a placeholder transcript, and then calls the NLU service.
-*   `audio_stream_pb2.py`, `audio_stream_pb2_grpc.py`: Generated Protobuf/gRPC code for audio streaming (shared).
-*   `nlu_service_pb2.py`, `nlu_service_pb2_grpc.py`: Generated Protobuf/gRPC code for NLU service interaction (client stubs for NLUService).
-*   `requirements.txt`: Python package dependencies.
-*   `config.py`: (Placeholder) Intended for service-specific configurations.
-*   `utils.py`: (Placeholder) Intended for any utility functions.
+*   `service.py`: Contains the gRPC `SpeechToTextServicer`. This servicer handles incoming `AudioSegment` messages, interfaces with the Deepgram SDK for streaming transcription, and calls the NLU service with the transcript.
+*   `config.py`: Manages configuration, primarily the `DEEPGRAM_API_KEY`.
+*   `audio_stream_pb2.py`, `audio_stream_pb2_grpc.py`: Generated Protobuf/gRPC code for audio streaming (shared with `StreamingDataManager`).
+*   `nlu_service_pb2.py`, `nlu_service_pb2_grpc.py`: Generated Protobuf/gRPC client stubs for calling the NLU service.
+*   `requirements.txt`: Python package dependencies, including `grpcio`, `protobuf`, `deepgram-sdk`, and `python-dotenv`.
 *   `__init__.py`: Makes the directory a Python package.
+*   `utils.py`: (Placeholder) For any utility functions.
+
+## Configuration
+
+The service requires a Deepgram API key to function.
+*   **Environment Variable:** The API key must be set as an environment variable named `DEEPGRAM_API_KEY`.
+*   **Local Development (`.env` file):** For local development, you can create a `.env` file in the `real_time_processing_engine/speech_to_text_service/` directory and add your API key there:
+    ```env
+    DEEPGRAM_API_KEY=your_actual_deepgram_api_key_here
+    ```
+    The `config.py` uses `python-dotenv` to load this file if present. **Do not commit the `.env` file to version control.**
 
 ## gRPC Service: SpeechToText
-
-The Speech-to-Text service exposes a gRPC service for receiving audio segments.
 
 *   **Service Definition:** `SpeechToText` (defined in `real_time_processing_engine/protos/audio_stream.proto`)
 *   **Port:** The gRPC server listens on `0.0.0.0:50052`.
 *   **RPC Method:** `TranscribeAudioSegment(AudioSegment) returns (TranscriptionResponse)`
-    *   **`AudioSegment`**: An incoming message containing a chunk of audio data, its format, session ID, etc.
-    *   **`TranscriptionResponse`**: A message containing the (currently placeholder) transcription for the segment, session ID, sequence number, etc.
+    *   **`AudioSegment`**: An incoming message containing a chunk of audio data (`data`), its `audio_format`, `session_id`, `sequence_number`, and an `is_final` flag.
+    *   **`TranscriptionResponse`**: A message containing the `transcript`, `confidence` score, `is_final` status (indicating if this is a final transcript from Deepgram for an utterance), and the `session_id`.
     *   **Behavior**:
-        1.  Upon receiving an `AudioSegment`, the `TranscribeAudioSegment` method logs its reception.
-        2.  It generates a **placeholder transcript** (e.g., "Placeholder transcript for segment X..."). Actual STT model integration is a future step.
-        3.  It then acts as a gRPC client to the `NLUService`. It creates an `NLURequest` containing the placeholder transcript and the original `session_id`.
-        4.  It calls the `ProcessText` method of the `NLUService` (typically running on `localhost:50053`).
-        5.  The response from `NLUService` (containing intent and entities) is logged.
-        6.  Finally, it returns the placeholder `TranscriptionResponse` to its original caller (e.g., `StreamingDataManager`).
+        1.  Upon receiving an `AudioSegment`, the `TranscribeAudioSegment` method in `SpeechToTextServicer` initializes or retrieves an active Deepgram live transcription connection associated with the `session_id`.
+        2.  The `audio_data` from the segment is sent to the Deepgram streaming connection. The `audio_format` from the request is used to configure the Deepgram `LiveOptions` (e.g., encoding, sample rate).
+        3.  **Streaming & Final Results:** The service uses Deepgram's interim and final results.
+            *   If `AudioSegment.is_final` is `true` (signaling the end of a client-side utterance or audio stream for that session), the service attempts to wait for a final transcript from Deepgram for the audio processed so far in that session.
+            *   If `AudioSegment.is_final` is `false`, the service may return an interim transcript if one is immediately available from Deepgram, or an empty transcript if not. The current implementation primarily focuses on returning a transcript when `is_final` is true.
+        4.  The Deepgram connection for a `session_id` is closed when a final transcript is processed after an `is_final=true` segment, or on server shutdown.
+        5.  **NLU Forwarding:** The obtained transcript (whether interim, final, or an error/timeout message) is then sent in an `NLURequest` to the `NLUService` (at `localhost:50053`) for further processing. The NLU response is logged.
+        6.  The `SpeechToTextServicer` returns a `TranscriptionResponse` to its original caller (e.g., `StreamingDataManager`), containing the transcript from Deepgram.
+
+## Key Dependencies
+*   `deepgram-sdk`: For interacting with the Deepgram API.
+*   `python-dotenv`: For managing environment variables during local development.
+*   `grpcio`, `protobuf`: For gRPC communication.
 
 ## Interaction with Other Services
 
-1.  **Receives from:** `StreamingDataManager`. The SDM calls the STT service's `TranscribeAudioSegment` method.
-2.  **Calls:** `NLUService`. After generating a transcript, the STT service calls the `NLUService`'s `ProcessText` method.
+1.  **Receives from:** `StreamingDataManager`. The SDM calls `SpeechToText.TranscribeAudioSegment`.
+2.  **Interacts with:** Deepgram's external ASR service for transcription.
+3.  **Calls:** `NLUService`. After obtaining a transcript, STT calls `NLUService.ProcessText`.
 
-### Example Flow:
-
-1.  The `StreamingDataManager` (SDM) receives an `AudioSegment` and calls `SpeechToText.TranscribeAudioSegment` on this STT service (at port `50052`).
-2.  The `SpeechToTextServicer` in `service.py` receives the segment.
-3.  It generates a placeholder transcript (e.g., "Placeholder transcript for segment 1 of session abc.").
-4.  It then sends this transcript in an `NLURequest` to `NLUService.ProcessText` (at port `50053`).
-5.  The `NLUService` (currently a placeholder) processes the text and returns an `NLUResponse` (e.g., intent="greeting").
-6.  The `SpeechToTextServicer` logs this `NLUResponse`.
-7.  The `SpeechToTextServicer` returns its original placeholder `TranscriptionResponse` to the SDM.
-
-The older `SpeechToTextService` class (business logic) is currently not directly integrated into the gRPC servicer's placeholder flow but can be used for future real STT model integration.
-The NLU results are not yet incorporated into the `TranscriptionResponse` sent back by STT; this could be a future enhancement or handled by a downstream aggregator service.
+## Important Notes on Current Implementation
+*   **Async Bridging:** The Deepgram SDK is asynchronous. The gRPC servicer methods are synchronous. The current implementation uses `asyncio.run_coroutine_threadsafe` and a dedicated asyncio event loop running in a separate thread to manage Deepgram's async operations.
+*   **Audio Format Handling:** The service attempts to map `AudioFormat` enum values to Deepgram encoding options. Proper handling of Opus (which requires decoding before sending to Deepgram live streams) and other formats is critical and may require additional processing steps not yet implemented.
+*   **Error Handling:** Basic error handling for Deepgram connection and timeouts is included. More comprehensive error management would be needed for a production system.
+*   **Session Management:** The service manages Deepgram connections per `session_id`. Cleanup of these connections on server shutdown is handled via `atexit`.

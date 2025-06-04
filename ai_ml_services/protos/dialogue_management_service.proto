@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package ai_ml_services.dialogue_management;
+
+// Import NLU definitions if NLUResponse is used directly
+import "nlu_service.proto"; // Assumes nlu_service.proto is in the same proto path
+
+// Go package option for generated Go code
+option go_package = "revovoiceai/ai_ml_services/protos/dialogue_management_service";
+
+// Request message for Dialogue Management
+message DialogueRequest {
+  string session_id = 1;                            // Session identifier
+  ai_ml_services.nlu.NLUResponse nlu_result = 2;  // Result from NLU service
+  // string user_id = 3; // Optional: for personalization
+  // map<string, string> conversation_context = 4; // Optional: for stateful conversation
+}
+
+// Response message from Dialogue Management
+message DialogueResponse {
+  string session_id = 1;        // Session identifier
+  string text_response = 2;     // Text response to be spoken to the user
+  // string action_code = 3; // Optional: specific action for the system to take (e.g., "ROUTE_TO_AGENT")
+  // map<string, string> updated_conversation_context = 4; // Optional: updated state
+}
+
+// DialogueManagementService definition
+service DialogueManagementService {
+  // Manages a turn in the conversation based on NLU input
+  rpc ManageTurn (DialogueRequest) returns (DialogueResponse);
+}

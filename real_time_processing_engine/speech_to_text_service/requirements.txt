@@ -1,3 +1,5 @@
 grpcio
 grpcio-tools
 protobuf
+deepgram-sdk>=0.10,<0.11
+python-dotenv
