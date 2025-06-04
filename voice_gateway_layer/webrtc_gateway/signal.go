@@ -144,6 +144,28 @@ func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConn
 					// Create and populate AudioSegment
 					// Note: For WebRTC, RTP packet data is directly the audio data for codecs like Opus.
 					// No separate RTP header stripping is typically needed here as Pion handles it.
+
+					// AudioFormat Handling Notes for OPUS:
+					// WebRTC commonly uses the Opus codec for audio, which is a compressed format.
+					// The AudioSegment below correctly marks the audio_format as OPUS.
+					//
+					// IMPORTANT CONSIDERATION FOR DOWNSTREAM STT:
+					// Many Speech-to-Text (STT) services, especially those designed for live
+					// streaming and high accuracy (like Deepgram when not in a simulated mode),
+					// expect uncompressed audio data, typically Linear PCM (e.g., L16).
+					//
+					// Therefore, for a production pipeline involving such an STT service,
+					// the Opus audio received here would need to be DECODED to PCM
+					// before being sent to that STT engine. This decoding could potentially
+					// happen:
+					//    1. Within this WebRTC Gateway before creating the AudioSegment.
+					//    2. In an intermediate audio processing microservice.
+					//    3. Potentially in the StreamingDataManager if it's designed for such tasks.
+					//
+					// For current testing purposes, especially if the downstream STT is
+					// simulated or if it's an STT service that explicitly supports direct
+					// Opus ingestion (less common for live streaming APIs), sending the
+					// OPUS format directly is acceptable for verifying pipeline flow.
 					segment := &real_time_processing.AudioSegment{
 						SessionId:      sessionID,
 						Timestamp:      time.Now().UnixMilli(),

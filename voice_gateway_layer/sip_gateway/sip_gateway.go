@@ -291,11 +291,12 @@ func StartSIPGateway(cfg SIPConfig, smClient SessionManagerClient) {
 				// This is a placeholder for actual RTP packet handling.
 				// In a real system, you'd receive RTP packets from remoteAddr (or a negotiated media port).
 				// For now, let's simulate a few packets.
+				// Simulate sending a few RTP packets with dummy audio data.
 				for i := 0; i < 5; i++ { // Simulate 5 RTP packets
 					time.Sleep(20 * time.Millisecond) // Simulate RTP packet interval
 
 					// Create a dummy RTP payload
-					dummyRTPPayload := []byte(fmt.Sprintf("RTP Packet %d for %s", i+1, callID))
+					dummyRTPPayload := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a}
 
 					// Populate AudioSegment
 					segment := &real_time_processing.AudioSegment{
@@ -306,6 +307,7 @@ func StartSIPGateway(cfg SIPConfig, smClient SessionManagerClient) {
 						Data:           dummyRTPPayload,
 						IsFinal:        false,
 					}
+					// NOTE: This uses a dummy payload. In a real scenario, this would be actual RTP audio data.
 					sendAudioSegmentToSdm(segment)
 				}
 			}(request.Headers[HeaderCallID], remoteAddr)

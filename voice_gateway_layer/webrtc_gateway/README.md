@@ -12,7 +12,7 @@ Go is chosen for its suitability in building high-performance, concurrent networ
 *   **ICE/STUN/TURN Handling**: Facilitates NAT traversal.
 *   **Peer Connection Management**: Establishes, monitors, and tears down WebRTC peer connections.
 *   **Session Lifecycle Management**: Integrates with the `session_manager` service via its HTTP API to register, update, and deregister WebRTC sessions.
-*   **Media Stream Handling**: Receives incoming RTP media streams and (future) forwards them to the Real-Time Processing Engine.
+*   **Media Stream Handling**: Receives incoming audio RTP media streams (typically Opus format from WebRTC clients) via the `OnTrack` callback. These Opus RTP packets are then encapsulated into `AudioSegment` messages and forwarded to the `StreamingDataManager` service via gRPC.
 
 ## Components
 
@@ -55,6 +55,9 @@ Go is chosen for its suitability in building high-performance, concurrent networ
 *   **Testing (`webrtc_gateway_test.go`):**
     *   Includes `mockWebRTCSessionManagerServer`.
     *   `TestWebSocketSignaling_OfferAnswer_WithSessionManager` tests interactions with the mock session manager.
+
+### Opus Audio Handling
+The WebRTC gateway forwards Opus-encoded audio packets as received from the client to the `StreamingDataManager`. While this is suitable for pipeline flow testing with simulated or Opus-aware STT services, most real-time STT engines (like the intended Deepgram integration for `SpeechToTextService`) expect uncompressed PCM audio (e.g., Linear16). Therefore, for full integration with such STT services, Opus decoding will need to be implemented. This decoding could potentially occur within this gateway, in an intermediate audio processing service, or be a capability of the `StreamingDataManager` or `SpeechToTextService` in the future. Currently, the `AudioSegment` correctly identifies the format as OPUS.
 
 ## Configuration via Environment Variables
 

@@ -55,7 +55,7 @@ This Go implementation is chosen for its performance characteristics suitable fo
     *   **SIP Parsing Errors**: `parseSIPRequest` returns `ErrSIPParseError` on failure. The main handler logs this and attempts to send a 400 Bad Request.
     *   **Critical Errors**: Fatal errors (e.g., failure to resolve address or listen on port) are logged and cause the service to exit.
 
-*   **RTP Stream Handling (Placeholder):** Basic SDP in 200 OK; actual RTP not implemented.
+*   **RTP Stream Handling (Simulated Output)**: Includes basic SDP in the 200 OK response. After a call is established (ACK received), the gateway simulates sending a few RTP-like audio segments with dummy PCMU payload data to the `StreamingDataManager` via gRPC. It does not currently process incoming RTP streams from the caller.
 
 *   **Testing (`sip_gateway_test.go`):**
     *   Basic unit tests for SIP parsing. Conceptual tests for INVITE/BYE flows. Tests for HTTP client interaction with a mock session manager were implemented but may not be current in the tool's view.
