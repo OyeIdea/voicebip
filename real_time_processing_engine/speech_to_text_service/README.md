@@ -41,6 +41,16 @@ The service requires a Deepgram API key to function.
         5.  **NLU Forwarding:** The obtained transcript (whether interim, final, or an error/timeout message) is then sent in an `NLURequest` to the `NLUService` (at `localhost:50053`) for further processing. The NLU response is logged.
         6.  The `SpeechToTextServicer` returns a `TranscriptionResponse` to its original caller (e.g., `StreamingDataManager`), containing the transcript from Deepgram.
 
+## Current Operational Mode: Simulated STT
+
+This service has been temporarily modified to simulate Deepgram Speech-to-Text (STT) processing. Key characteristics of this simulated mode are:
+
+*   **No External Deepgram Connection:** It does not currently connect to the external Deepgram API.
+*   **No API Key Required:** Consequently, a `DEEPGRAM_API_KEY` is not required to run the service in this simulated mode.
+*   **Dummy Transcript Generation:** It generates a dummy/placeholder transcript. This transcript is typically based on metadata from the input `AudioSegment`, such as the `session_id`, `sequence_number`, and `audio_format`.
+*   **Purpose of Simulation:** This simulation is primarily to enable end-to-end pipeline testing and development of the RevoVoiceAI system without a dependency on live Deepgram services or active API keys. It allows developers to verify data flow and interactions between services.
+*   **NLU Forwarding Active:** The logic for forwarding the transcript to the `NLUService` remains active. The simulated (dummy) transcript will be sent to the NLU service for further processing.
+
 ## Key Dependencies
 *   `deepgram-sdk`: For interacting with the Deepgram API.
 *   `python-dotenv`: For managing environment variables during local development.

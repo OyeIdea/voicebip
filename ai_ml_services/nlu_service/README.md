@@ -69,6 +69,18 @@ For the NLUService to function correctly with Dialogflow CX, the following prere
         9.  The response from `DialogueManagementService` is logged.
         10. Finally, the `NLUService` returns the `NLUResponse` (from Dialogflow CX or error) to its original caller.
 
+### Fallback Behavior / Simulated Pipeline Note
+
+It's important to understand how the `NLUService` behaves if the Dialogflow CX client (`self.sessions_client`) is not properly initialized or if there's an issue calling the Dialogflow CX API:
+
+*   **Initialization Failure:** If the Dialogflow CX client fails to initialize during the service startup (e.g., due to missing or invalid `GOOGLE_APPLICATION_CREDENTIALS`, `DIALOGFLOW_PROJECT_ID`, or `DIALOGFLOW_AGENT_ID`), the `ProcessText` method will not attempt to call the external Dialogflow CX API.
+*   **Error Response Generation:** In such cases (initialization failure or errors during an attempted API call), the service returns a predefined error-like `NLUResponse`. This response will typically include:
+    *   An `intent` like `"error_no_dialogflow_client"` or `"error_calling_dialogflow"`.
+    *   A low `intent_confidence` (e.g., 0.0).
+    *   An empty list of `entities`.
+*   **Pipeline Testing:** This fallback behavior is crucial for testing the broader RevoVoiceAI pipeline, especially when actual NLU processing via Dialogflow CX is not required for a specific test, or if the full Dialogflow CX setup is pending. It allows downstream services to be tested with a known error-state NLU output.
+*   **Continued Processing:** The `NLUService` will still proceed to call the `DialogueManagementService` with this fallback/error `NLUResponse`. This ensures that the subsequent services in the pipeline are exercised even if NLU processing itself could not be completed.
+
 ## Key Dependencies
 *   `google-cloud-dialogflow-cx`: The Google Cloud client library for Dialogflow CX.
 *   `python-dotenv`: For managing environment variables during local development.

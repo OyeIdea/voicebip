@@ -37,6 +37,7 @@ The DM Service exposes its functionality via a gRPC interface.
 The dialogue logic in `service.py` is currently a **placeholder**:
 *   It formulates simple text responses based on NLU intents like "greeting", "get_help", "get_weather".
 *   It attempts to use a "location" entity from NLU for weather responses.
+*   It now includes specific handling for NLU error intents (such as `error_no_dialogflow_client` or `error_calling_dialogflow`), responding with a message indicating that it's having trouble understanding and suggesting the user try again later. This allows for more graceful behavior when integrated into a simulated pipeline where the NLU service might be providing fallback responses.
 *   The actual dialogue state tracking and policy management for complex conversations will be developed in the future.
 
 ## Interaction in the System
