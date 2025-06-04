@@ -50,8 +50,11 @@ class DialogueManagementServicer(dialogue_management_service_pb2_grpc.DialogueMa
                 elif entity.name == "date":
                     date_info = f" for {entity.value}"
             text_response = f"I'm sorry, I can't fetch the actual weather for {location}{date_info} right now, but I hope it's a pleasant day!"
-        elif not nlu_result.intent:
+        elif nlu_result.intent == "error_no_dialogflow_client" or nlu_result.intent == "error_calling_dialogflow":
+            text_response = "I'm having a little trouble with my understanding capabilities at the moment. Please try again later."
+        elif not nlu_result.intent: # This will catch empty intents
              text_response = "I'm not sure what you mean. Can you try rephrasing?"
+        # The default response will be used if none of the above conditions are met.
 
         print(f"DialogueManagementService: Determined text response for SID '{session_id}': '{text_response}'")
 
