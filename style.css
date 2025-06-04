@@ -1,0 +1,111 @@
+/* Basic styling for the RevoVoiceAI Data Flow Visualizer */
+
+body {
+    font-family: Arial, sans-serif; /* 1. Body Styling: Font */
+    margin: 0; /* 1. Body Styling: Basic margin/padding reset */
+    padding: 20px; /* 1. Body Styling: Basic padding */
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+/* 2. Main Container Styling (using body as the main container for now) */
+/* To truly center a fixed-width layout, a wrapper div would be better, */
+/* but for a full-width responsive layout, this is okay. */
+
+h1 {
+    text-align: center;
+    color: #2c3e50;
+    margin-bottom: 40px;
+}
+
+h2 {
+    color: #3498db;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+    margin-top: 40px;
+    margin-bottom: 20px;
+}
+
+section {
+    /* 3. Section Styling */
+    border: 1px solid #ddd;
+    margin-bottom: 30px;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 3. Section Styling: Distinct background colors */
+#real-time-call-processing-flow {
+    background-color: #eaf2f8; /* Light blue */
+}
+
+#agent-support-flow {
+    background-color: #e8f6f3; /* Light teal */
+}
+
+#analytics-flow {
+    background-color: #fef9e7; /* Light yellow */
+}
+
+/* 5. Layout for Components within Sections: Flexbox */
+#real-time-call-processing-flow,
+#agent-support-flow,
+#analytics-flow {
+    display: flex;
+    flex-wrap: wrap; /* Allow wrapping if not enough space */
+    justify-content: flex-start; /* Align items to the start */
+    gap: 15px; /* 5. Spacing between components */
+}
+
+.component { /* Using a class for component divs for easier selection */
+    /* 4. Component Div Styling */
+    border: 1px solid #bdc3c7;
+    background-color: #ffffff; /* White background for components */
+    padding: 15px;
+    margin: 5px; /* Adjusted margin as gap is used in flex container */
+    border-radius: 6px;
+    min-height: 80px; /* 4. Minimum height */
+    min-width: 120px; /* 4. Minimum width */
+    display: flex; /* For centering text */
+    align-items: center; /* For centering text vertically */
+    justify-content: center; /* For centering text horizontally */
+    text-align: center; /* 4. Ensure text is centered */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    flex-grow: 1; /* Allow components to grow if space is available */
+    flex-basis: 120px; /* Default basis before growing/shrinking */
+}
+
+.component p {
+    margin: 0;
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+/* 6. Arrow Styling (Placeholder) */
+/* For now, components are laid out sequentially by Flexbox.
+   Actual arrows will require more complex CSS or JS/SVG.
+   This class is a placeholder if we decide to add explicit arrow elements later. */
+.data-flow-arrow {
+    /* Example: if we had <div class="data-flow-arrow"></div> between components */
+    /* align-self: center; */
+    /* height: 2px; */
+    /* width: 30px; */
+    /* background-color: black; */
+    /* margin: 0 10px; */
+}
+
+/* 7. Highlight Class */
+.active {
+    background-color: #f1c40f; /* Yellow background */
+    border-color: #c0392b; /* Red border */
+    color: #c0392b; /* Red text color for contrast */
+    box-shadow: 0 0 10px rgba(241, 196, 15, 0.7);
+    transform: scale(1.05); /* Slightly larger when active */
+    transition: background-color 0.3s, border-color 0.3s, transform 0.3s;
+}
+
+/* Ensure the div elements in HTML get the 'component' class for styling */
+/* This will be done by modifying the HTML in a subsequent step if necessary,
+   or by assuming JavaScript will add this class. For now, the CSS is prepared.
+   Let's update the HTML to include this class for the component divs. */

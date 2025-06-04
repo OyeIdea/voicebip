@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RevoVoiceAI Data Flow Visualizer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>RevoVoiceAI Data Flow Visualizer</h1>
+
+    <section id="real-time-call-processing-flow">
+        <h2>Real-time Call Processing Flow</h2>
+        <div id="call-initiation" class="component" data-flow="realtime">
+            <p>Call Initiation</p>
+        </div>
+        <div id="voice-gateway-1" class="component" data-flow="realtime">
+            <p>Voice Gateway (In)</p>
+        </div>
+        <div id="real-time-processing-engine" class="component" data-flow="realtime">
+            <p>Real-time Processing Engine</p>
+        </div>
+        <div id="ai-ml-services" class="component" data-flow="realtime">
+            <p>AI/ML Services (Speech Recognition)</p>
+        </div>
+        <div id="business-logic-layer" class="component" data-flow="realtime">
+            <p>Business Logic Layer (Intent Processing)</p>
+        </div>
+        <div id="text-to-speech" class="component" data-flow="realtime">
+            <p>Text-to-Speech</p>
+        </div>
+        <div id="voice-gateway-2" class="component" data-flow="realtime">
+            <p>Voice Gateway (Audio Response)</p>
+        </div>
+        <div id="customer" class="component" data-flow="realtime">
+            <p>Customer</p>
+        </div>
+    </section>
+
+    <section id="agent-support-flow">
+        <h2>Agent Support Flow</h2>
+        <div id="call-context" class="component" data-flow="agent">
+            <p>Call Context</p>
+        </div>
+        <div id="real-time-agent-assistant" class="component" data-flow="agent">
+            <p>Real-time Agent Assistant</p>
+        </div>
+        <div id="agent-dashboard" class="component" data-flow="agent">
+            <p>Agent Dashboard</p>
+        </div>
+        <div id="agent-interface" class="component" data-flow="agent">
+            <p>Agent Interface</p>
+        </div>
+        <div id="agent-actions" class="component" data-flow="agent">
+            <p>Agent Actions</p>
+        </div>
+        <div id="crm-integration" class="component" data-flow="agent">
+            <p>CRM Integration</p>
+        </div>
+        <div id="data-management-layer" class="component" data-flow="agent">
+            <p>Data Management Layer</p>
+        </div>
+    </section>
+
+    <section id="analytics-flow">
+        <h2>Analytics Flow</h2>
+        <div id="call-events" class="component" data-flow="analytics">
+            <p>Call Events</p>
+        </div>
+        <div id="stream-processing" class="component" data-flow="analytics">
+            <p>Stream Processing</p>
+        </div>
+        <div id="monitoring-dashboard" class="component" data-flow="analytics">
+            <p>Monitoring Dashboard</p>
+        </div>
+        <div id="data-warehouse" class="component" data-flow="analytics">
+            <p>Data Warehouse</p>
+        </div>
+        <div id="ml-training" class="component" data-flow="analytics">
+            <p>ML Training</p>
+        </div>
+        <div id="business-intelligence" class="component" data-flow="analytics">
+            <p>Business Intelligence</p>
+        </div>
+    </section>
+
+    <script src="script.js"></script>
+</body>
+</html>
