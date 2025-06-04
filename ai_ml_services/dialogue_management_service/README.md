@@ -34,9 +34,10 @@ The DM Service exposes its functionality via a gRPC interface.
 
 ## Current Status & Logic
 
-The dialogue logic in `service.py` is currently a **placeholder**:
-*   It formulates simple text responses based on NLU intents like "greeting", "get_help", "get_weather".
-*   It attempts to use a "location" entity from NLU for weather responses.
+The dialogue logic in `service.py` is currently a **placeholder**, but has been enhanced with basic state management:
+*   It uses a simple in-memory session state (per `session_id`) to handle basic multi-turn interactions. It formulates text responses based on NLU intents like "greeting", "get_help", "get_weather", and a new "goodbye" intent.
+*   For the "get_weather" intent, if a location entity is missing, it will now ask the user for a location and remember that it's waiting for this information in the next turn. It then attempts to use the provided location in its (still placeholder) weather response.
+*   A "goodbye" intent is now handled, which will result in a polite farewell and clearing of the session state for that user.
 *   It now includes specific handling for NLU error intents (such as `error_no_dialogflow_client` or `error_calling_dialogflow`), responding with a message indicating that it's having trouble understanding and suggesting the user try again later. This allows for more graceful behavior when integrated into a simulated pipeline where the NLU service might be providing fallback responses.
 *   The actual dialogue state tracking and policy management for complex conversations will be developed in the future.
 
