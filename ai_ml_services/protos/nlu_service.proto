@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package ai_ml_services.nlu;
+
+// Go package option for generated Go code
+option go_package = "revovoiceai/ai_ml_services/protos/nlu_service";
+
+// Request message for NLU processing
+message NLURequest {
+  string text = 1;          // The input text to process
+  string session_id = 2;    // Session identifier for context
+  // map<string, string> context = 3; // Optional: for carrying conversation context
+}
+
+// Represents a detected entity
+message Entity {
+  string name = 1;          // Name of the entity (e.g., "location", "time")
+  string value = 2;         // Value of the entity (e.g., "New York", "tomorrow")
+  float confidence = 3;     // Confidence score for the detected entity
+}
+
+// Response message from NLU processing
+message NLUResponse {
+  string session_id = 1;        // Session identifier
+  string intent = 2;            // Detected intent
+  repeated Entity entities = 3; // List of detected entities
+  string processed_text = 4;    // Text used for NLU (could be same as input or cleaned)
+  float intent_confidence = 5;  // Confidence score for the detected intent
+}
+
+// NLUService definition
+service NLUService {
+  // Processes a text input and returns NLU results
+  rpc ProcessText (NLURequest) returns (NLUResponse);
+}

@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package real_time_processing;
+
+option go_package = "revovoiceai/voice_gateway_layer/internal/protos/real_time_processing";
+
+enum AudioFormat {
+  AUDIO_FORMAT_UNSPECIFIED = 0;
+  PCMU = 1;
+  PCMA = 2;
+  OPUS = 3;
+}
+
+message AudioSegment {
+  string session_id = 1;
+  int64 timestamp = 2; // Unix timestamp in milliseconds
+  AudioFormat audio_format = 3;
+  uint32 sequence_number = 4;
+  bytes data = 5;
+  bool is_final = 6;
+}
+
+message IngestResponse {
+  string session_id = 1;
+  uint32 sequence_number = 2;
+  string status_message = 3; // e.g., "Segment received"
+}
+
+service StreamIngest {
+  rpc IngestAudioSegment (AudioSegment) returns (IngestResponse);
+}
+
+message TranscriptionResponse {
+  string session_id = 1;
+  uint32 sequence_number = 2;
+  string transcript = 3;
+  bool is_final = 4; // Is this the final transcript for the segment/utterance
+  float confidence = 5;
+}
+
+service SpeechToText {
+  // Sends a segment for transcription, could be part of a stream
+  rpc TranscribeAudioSegment (AudioSegment) returns (TranscriptionResponse);
+}
