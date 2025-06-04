@@ -2,25 +2,28 @@
 
 import grpc
 from concurrent import futures
-import time # Required for server.wait_for_termination() in a loop, though not strictly for the current serve()
+import time # Required for server.wait_for_termination() in a loop
 
-# Import generated protobuf and gRPC modules
-# These should be in the same directory or Python path
+# Import generated protobuf and gRPC modules for NLU Service
 import nlu_service_pb2
 import nlu_service_pb2_grpc
 
-# The NLUService class below is the gRPC servicer.
-# The existing NLUService class (for business logic) can be kept if desired,
-# and the servicer could instantiate or use it. For this subtask,
-# the servicer will implement the logic directly as per instructions.
+# Import generated protobuf and gRPC modules for Dialogue Management Service (client)
+import dialogue_management_service_pb2
+import dialogue_management_service_pb2_grpc
 
 class NLUServiceServicer(nlu_service_pb2_grpc.NLUServiceServicer):
     """
     Implements the NLUService gRPC interface.
+    After processing text, it calls the DialogueManagementService.
     """
+    def __init__(self):
+        # Configuration for Dialogue Management service endpoint
+        self.dm_service_address = 'localhost:50054' # Make this configurable
+
     def ProcessText(self, request: nlu_service_pb2.NLURequest, context):
         """
-        Processes a text input and returns NLU results.
+        Processes a text input, generates NLU results, and then calls DialogueManagementService.
         """
         print(f"NLUService: Received text '{request.text}' for session_id '{request.session_id}'")
         
@@ -30,9 +33,8 @@ class NLUServiceServicer(nlu_service_pb2_grpc.NLUServiceServicer):
         entities = [
             nlu_service_pb2.Entity(name="name", value="User", confidence=0.8)
         ]
-        processed_text = request.text # Or some cleaned version
+        processed_text = request.text
         
-        # Simple rule-based modification for demonstration
         if "help" in request.text.lower():
             intent = "get_help"
             entities.append(nlu_service_pb2.Entity(name="topic", value="general", confidence=0.7))
@@ -42,15 +44,44 @@ class NLUServiceServicer(nlu_service_pb2_grpc.NLUServiceServicer):
             if "tomorrow" in request.text.lower():
                  entities.append(nlu_service_pb2.Entity(name="date", value="tomorrow", confidence=0.9))
         
-        print(f"NLUService: Intent='{intent}', Entities={entities}")
-
-        return nlu_service_pb2.NLUResponse(
+        nlu_response = nlu_service_pb2.NLUResponse(
             session_id=request.session_id,
             intent=intent,
             entities=entities,
             processed_text=processed_text,
             intent_confidence=intent_confidence
         )
+
+        entities_str = ', '.join([f"{e.name}='{e.value}' (conf: {e.confidence:.2f})" for e in nlu_response.entities])
+        print(f"NLUService: Generated NLU Response for SID {nlu_response.session_id}: Intent='{nlu_response.intent}' (Conf: {nlu_response.intent_confidence:.2f}), Entities=[{entities_str}]")
+
+        # Call DialogueManagementService
+        # Using 'with' statement for automatic channel closure
+        try:
+            with grpc.insecure_channel(self.dm_service_address) as channel:
+                dm_stub = dialogue_management_service_pb2_grpc.DialogueManagementServiceStub(channel)
+
+                dialogue_request = dialogue_management_service_pb2.DialogueRequest(
+                    session_id=nlu_response.session_id, # Or request.session_id
+                    nlu_result=nlu_response
+                )
+
+                print(f"NLUService: Calling DialogueManagementService at {self.dm_service_address} for SID {dialogue_request.session_id}")
+                dm_response = dm_stub.ManageTurn(dialogue_request, timeout=10) # Adding a timeout
+
+                if dm_response:
+                    print(f"NLUService: Received DM response for SID {dm_response.session_id}: TextResponse='{dm_response.text_response}'")
+                else:
+                    print(f"NLUService: Received no response from DialogueManagementService for SID {dialogue_request.session_id}")
+
+        except grpc.RpcError as e:
+            # Using e.code() and e.details() for more structured error info
+            print(f"NLUService: Error calling DialogueManagementService for SID {request.session_id}: Code={e.code()}, Details='{e.details()}'")
+        except Exception as e:
+            print(f"NLUService: An unexpected Python error occurred while calling DMService for SID {request.session_id}: {e}")
+
+        # The NLUService still returns its own nlu_response to its original caller (e.g., SpeechToTextService)
+        return nlu_response
 
 def serve():
     """
@@ -59,7 +90,7 @@ def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     nlu_service_pb2_grpc.add_NLUServiceServicer_to_server(NLUServiceServicer(), server)
     
-    port = "50053" # Define the port for NLU service
+    port = "50053"
     listen_addr = f'[::]:{port}'
     server.add_insecure_port(listen_addr)
     
@@ -67,21 +98,12 @@ def serve():
     print(f"NLUService server started, listening on port {port}")
     
     try:
-        # Keep the server running until interrupted
-        # server.wait_for_termination() # This blocks indefinitely
         while True:
-            time.sleep(86400) # Sleep for a day, effectively keeping the thread alive
+            time.sleep(86400)
     except KeyboardInterrupt:
         print("NLUService server stopping...")
-        server.stop(0) # Graceful stop
+        server.stop(0)
         print("NLUService server stopped.")
 
-# Main guard to run the server when the script is executed
 if __name__ == '__main__':
-    # The original NLUService class (business logic) can be instantiated here
-    # if the servicer needs to use it. For this task, it's not directly used by the servicer.
-    # e.g., nlu_logic_instance = NLUService()
-    # servicer = NLUServiceServicer(nlu_logic=nlu_logic_instance)
-    # and then pass `servicer` to add_NLUServiceServicer_to_server.
-    
     serve()

@@ -54,4 +54,50 @@ Defines the gRPC service contract for NLU processing.
 
 *   **RPC: `ProcessText (NLURequest) returns (NLUResponse)`**
     *   **Role:** This is the primary method for the NLU service. It takes an `NLURequest` (containing the text to analyze), performs NLU processing, and returns an `NLUResponse` (containing the extracted intent, entities, and other relevant information).
-    *   This service is currently implemented by the Python `NLUServiceServicer` in the `ai_ml_services/nlu_service` directory, which provides placeholder logic.
+    *   This service is currently implemented by the Python `NLUServiceServicer` in the `ai_ml_services/nlu_service` directory.
+
+---
+
+## `dialogue_management_service.proto`
+
+This file defines the interface for the Dialogue Management (DM) Service.
+
+**Package:** `ai_ml_services.dialogue_management`
+
+**Go Package:** `revovoiceai/ai_ml_services/protos/dialogue_management_service`
+
+**Imports:** `nlu_service.proto` (from the same directory)
+
+### Message: `DialogueRequest`
+
+Represents a request to the DM service to manage a conversational turn.
+
+*   `string session_id = 1;`
+    *   A unique identifier for the ongoing session or conversation.
+*   `ai_ml_services.nlu.NLUResponse nlu_result = 2;`
+    *   The structured output from the `NLUService` for the current user utterance. This provides the DM service with the detected intent and entities.
+*   `// string user_id = 3;`
+    *   (Commented out) Optional field for user-specific personalization.
+*   `// map<string, string> conversation_context = 4;`
+    *   (Commented out) Optional field for passing explicit conversation state/context if not fully managed by the DM service itself or if additional external context is needed.
+
+### Message: `DialogueResponse`
+
+Represents the response from the DM service for a given turn.
+
+*   `string session_id = 1;`
+    *   The session identifier, passed through from the `DialogueRequest`.
+*   `string text_response = 2;`
+    *   The text response that the system should convey to the user. This could be a direct answer, a clarifying question, or a statement to guide the conversation.
+*   `// string action_code = 3;`
+    *   (Commented out) Optional field to specify a non-verbal action the system should take (e.g., "ROUTE_TO_AGENT", "QUERY_DATABASE").
+*   `// map<string, string> updated_conversation_context = 4;`
+    *   (Commented out) Optional field for the DM service to return the updated conversation state explicitly.
+
+### Service: `DialogueManagementService`
+
+Defines the gRPC service contract for managing dialogue.
+
+*   **RPC: `ManageTurn (DialogueRequest) returns (DialogueResponse)`**
+    *   **Role:** This is the primary method for the DM service. It takes a `DialogueRequest` (which includes the NLU results for the last user turn), processes it according to its internal dialogue logic and state, and returns a `DialogueResponse` indicating the system's next step (primarily the text response).
+    *   This service is currently implemented by the Python `DialogueManagementServicer` in the `ai_ml_services/dialogue_management_service` directory.

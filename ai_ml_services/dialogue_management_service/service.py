@@ -1,164 +1,102 @@
 # ai_ml_services/dialogue_management_service/service.py
 
-# from ..nlu_service.service import NLUService # Assuming NLUService output structure
+import grpc
+from concurrent import futures
+import time # Required for server.wait_for_termination() in a loop
 
-class DialogueManagementService:
+# Import generated protobuf and gRPC modules
+# These should be in the same directory or Python path
+import dialogue_management_service_pb2
+import dialogue_management_service_pb2_grpc
+
+# Import NLU message definitions (needed for request.nlu_result)
+# This assumes nlu_service_pb2.py is in the same directory or path.
+import nlu_service_pb2
+
+# Optional: for more advanced logging
+# import logging
+# logging.basicConfig(level=logging.INFO)
+
+
+class DialogueManagementServicer(dialogue_management_service_pb2_grpc.DialogueManagementServiceServicer):
     """
-    Dialogue Management (DM) Service.
-    Responsible for managing the flow of conversation, tracking state,
-    applying policies, and determining system actions.
+    Implements the DialogueManagementService gRPC interface.
     """
-
-    def __init__(self, config=None):
+    def ManageTurn(self, request: dialogue_management_service_pb2.DialogueRequest, context):
         """
-        Initializes the DialogueManagementService.
-
-        Args:
-            config: Configuration object or dictionary.
-                    (Placeholder for future configuration loading, e.g.,
-                     paths to dialogue rules from config.py or rules/)
+        Manages a turn in the conversation based on NLU input.
+        Returns a text response.
         """
-        self.config = config
-        # Future initialization for dialogue rules, state trackers, etc.
-        print("DialogueManagementService initialized.")
-
-    def _track_state(self, current_state: dict = None, nlu_output: dict = None) -> dict:
-        """
-        Updates and returns the dialogue state based on NLU output and current state.
-        """
-        if current_state is None:
-            updated_state = {"history": []}
-        else:
-            updated_state = current_state.copy() # Avoid modifying the original object directly
-
-        if nlu_output:
-            # For simplicity, just store the NLU output in history.
-            # A more sophisticated tracker might extract specific slots, intents, etc.
-            updated_state["history"].append(nlu_output)
-            # Potentially update other state variables based on NLU output
-            updated_state["last_nlu_intent"] = nlu_output.get("intent", {}).get("intent")
-            updated_state["last_nlu_entities"] = nlu_output.get("entities", {}).get("entities")
+        nlu_result = request.nlu_result
+        session_id = request.session_id
         
-        print(f"DM Service: State tracked. New state: {updated_state}")
-        return updated_state
-
-    def _apply_policy(self, state: dict) -> dict:
-        """
-        Applies dialogue policy to determine the next system action based on the current state.
-        """
-        # Simple rule-based policy
-        last_intent = state.get("last_nlu_intent")
+        # Log the received NLU result
+        # Using print for simplicity, replace with logging in a real application
+        entities_str = ', '.join([f"{e.name}='{e.value}' (conf: {e.confidence:.2f})" for e in nlu_result.entities])
+        print(f"DialogueManagementService: Received NLU for session '{session_id}': Intent='{nlu_result.intent}' (Conf: {nlu_result.intent_confidence:.2f}), Entities=[{entities_str}], ProcessedText='{nlu_result.processed_text}'")
         
-        if last_intent == "greet":
-            policy_decision = {"action": "reply", "message_key": "greeting_response"}
-        elif last_intent == "order_pizza":
-            # Example for a more specific intent
-            policy_decision = {"action": "reply", "message_key": "pizza_order_confirmation"}
-        else:
-            policy_decision = {"action": "reply", "message_key": "default_fallback"}
+        text_response = "I'm sorry, I didn't quite understand that. Could you say it again?" # Default fallback
+
+        # Placeholder logic to determine response based on intent
+        if nlu_result.intent == "greeting":
+            text_response = "Hello there! How can I help you today?"
+        elif nlu_result.intent == "get_help":
+            text_response = "I understand you need help. I'll do my best to assist you."
+        elif nlu_result.intent == "get_weather":
+            location = "your area" # Default location
+            date_info = ""
+            for entity in nlu_result.entities:
+                if entity.name == "location":
+                    location = entity.value
+                elif entity.name == "date": # Assuming NLU might extract a date entity
+                    date_info = f" for {entity.value}"
             
-        print(f"DM Service: Policy applied. Decision: {policy_decision}")
-        return policy_decision
+            # More sophisticated weather logic would go here
+            text_response = f"I'm sorry, I can't fetch the actual weather for {location}{date_info} right now, but I hope it's a pleasant day!"
+        elif not nlu_result.intent: # No intent detected or empty intent string
+             text_response = "I'm not sure what you mean. Can you try rephrasing?"
 
-    def _generate_response(self, action_details: dict) -> str:
-        """
-        Generates or retrieves a response string based on action details (e.g., a message key).
-        """
-        message_key = action_details.get("message_key")
+        print(f"DialogueManagementService: Responding to session '{session_id}' with: '{text_response}'")
         
-        if message_key == "greeting_response":
-            response = "Hello! How can I help you today?"
-        elif message_key == "pizza_order_confirmation":
-            response = "Sure, I can help with that. What kind of pizza would you like?"
-        elif message_key == "default_fallback":
-            response = "Sorry, I didn't understand that. Can you please rephrase?"
-        else:
-            response = "I'm not sure how to respond to that."
-            
-        print(f"DM Service: Response generated for key '{message_key}': '{response}'")
-        return response
+        return dialogue_management_service_pb2.DialogueResponse(
+            session_id=session_id,
+            text_response=text_response
+            # action_code and updated_conversation_context could be set here if needed
+        )
 
-    def determine_next_action(self, nlu_output: dict, current_state: dict = None) -> dict:
-        """
-        Determines the next system action based on NLU output and current dialogue state.
-
-        Args:
-            nlu_output (dict): The output from the NLUService.
-                               Example: {"text": "...", "intent": {"intent": "greet", ...}, ...}
-            current_state (dict, optional): The current dialogue state. Defaults to None.
-
-        Returns:
-            dict: A dictionary specifying the system action.
-                  Example: {
-                      "action_type": "reply",
-                      "message_to_user": "Hello!",
-                      "new_state": {...},
-                      "action_details": {"action": "reply", "message_key": "greeting_response"}
-                  }
-        """
-        print(f"\nDM Service: Determining next action for NLU output: {nlu_output}")
-        if current_state:
-            print(f"DM Service: Current state: {current_state}")
-
-        updated_state = self._track_state(current_state, nlu_output)
-        policy_decision = self._apply_policy(updated_state)
-        
-        message_to_user = None
-        if policy_decision.get("action") == "reply":
-            message_to_user = self._generate_response(policy_decision)
-            
-        system_action = {
-            "action_type": policy_decision.get("action"),
-            "message_to_user": message_to_user,
-            "new_state": updated_state,
-            "action_details": policy_decision
-        }
-        
-        print(f"DM Service: Next action determined: {system_action}")
-        return system_action
-
-# Example usage (optional, for testing or demonstration)
-if __name__ == "__main__":
-    dm_service = DialogueManagementService()
-
-    # Mock NLU output for a greeting
-    mock_nlu_greet = {
-        "text": "Hello there",
-        "intent": {"intent": "greet", "confidence": 0.95},
-        "entities": {},
-        "context": {"user_id": "user123"} 
-    }
-
-    print("\n--- Example 1: Greeting ---")
-    action_result_1 = dm_service.determine_next_action(nlu_output=mock_nlu_greet)
-    # print(f"Action Result 1: {action_result_1}")
-
-    # Mock NLU output for an order, using the state from the previous turn
-    mock_nlu_order = {
-        "text": "I want to order a pizza",
-        "intent": {"intent": "order_pizza", "confidence": 0.88},
-        "entities": {"pizza_type": "pepperoni"}, # Simplified
-        "context": action_result_1["new_state"].get("history", [{}])[-1].get("context") # Get context from NLU output in history
-    }
-    
-    print("\n--- Example 2: Order Pizza (with state from previous turn) ---")
-    action_result_2 = dm_service.determine_next_action(
-        nlu_output=mock_nlu_order, 
-        current_state=action_result_1["new_state"]
+def serve():
+    """
+    Starts the gRPC server for the DialogueManagementService.
+    """
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    dialogue_management_service_pb2_grpc.add_DialogueManagementServiceServicer_to_server(
+        DialogueManagementServicer(), server
     )
-    # print(f"Action Result 2: {action_result_2}")
 
-    # Mock NLU output for an unknown intent
-    mock_nlu_unknown = {
-        "text": "Can you sing a song?",
-        "intent": {"intent": "request_song", "confidence": 0.70}, # Assuming this intent is not handled
-        "entities": {},
-        "context": action_result_2["new_state"].get("history", [{}])[-1].get("context")
-    }
+    port = "50054" # Define the port for Dialogue Management service
+    listen_addr = f'[::]:{port}'
+    server.add_insecure_port(listen_addr)
 
-    print("\n--- Example 3: Unknown Intent (with state from previous turn) ---")
-    action_result_3 = dm_service.determine_next_action(
-        nlu_output=mock_nlu_unknown,
-        current_state=action_result_2["new_state"]
-    )
-    # print(f"Action Result 3: {action_result_3}")
+    server.start()
+    print(f"DialogueManagementService server started, listening on port {port}")
+
+    try:
+        # Keep the server running until interrupted
+        # server.wait_for_termination() # This blocks indefinitely
+        while True:
+            time.sleep(86400) # Sleep for a day, effectively keeping the thread alive
+    except KeyboardInterrupt:
+        print("DialogueManagementService server stopping...")
+        server.stop(0) # Graceful stop
+        print("DialogueManagementService server stopped.")
+
+# Main guard to run the server when the script is executed
+if __name__ == '__main__':
+    # The original DialogueManagementService class (business logic) can be instantiated here
+    # if the servicer needs to use it, e.g., for complex state tracking or policy rules.
+    # For this task, the servicer implements logic directly.
+    # e.g., dm_logic = DialogueManagementService()
+    # servicer_instance = DialogueManagementServicer(logic=dm_logic)
+    # and then pass `servicer_instance` to add_DialogueManagementServiceServicer_to_server.
+
+    serve()
