@@ -1,105 +1,82 @@
 # real_time_processing_engine/text_to_speech_service/service.py
 
-class TextToSpeechService:
+import grpc
+from concurrent import futures
+import time # Required for server.wait_for_termination() in a loop
+
+# Import generated protobuf and gRPC modules
+# These should be in the same directory or Python path
+import tts_service_pb2
+import tts_service_pb2_grpc
+
+# Optional: for more advanced logging
+# import logging
+# logging.basicConfig(level=logging.INFO)
+
+
+class TextToSpeechServicer(tts_service_pb2_grpc.TextToSpeechServiceServicer):
     """
-    Service for converting text to speech.
-    Handles text preprocessing, speech synthesis, and audio encoding.
+    Implements the TextToSpeechService gRPC interface.
     """
+    def SynthesizeText(self, request: tts_service_pb2.TTSRequest, context):
+        """
+        Receives text and returns a status message.
+        Placeholder for actual speech synthesis.
+        """
+        print(f"TextToSpeechService: Received text '{request.text_to_synthesize}' for session_id '{request.session_id}'. Voice config: '{request.voice_config_id}'")
 
-    def __init__(self, config=None):
-        """
-        Initializes the TextToSpeechService.
-
-        Args:
-            config: Configuration object or dictionary.
-                    (Placeholder for future configuration loading, 
-                     e.g., paths to voice models from config.py or voices/)
-        """
-        self.config = config
-        # Future initialization for TTS engines, voice models, etc.
-        print("TextToSpeechService initialized.")
-
-    def _preprocess_text(self, text: str) -> str:
-        """
-        Normalizes and preprocesses input text for TTS.
-        """
-        print(f"TTS Service: Preprocessing text: '{text}'")
-        processed_text = text.lower().strip()
-        # Add more sophisticated preprocessing later (e.g., number expansion, SSML parsing)
-        print(f"TTS Service: Processed text: '{processed_text}'")
-        return processed_text
-
-    def _synthesize(self, processed_text: str, voice_id: str = None) -> bytes:
-        """
-        Core synthesis logic using a TTS engine/model.
-        """
-        print(f"TTS Service: Synthesizing speech for text: '{processed_text}' using voice: {voice_id if voice_id else 'default'}")
-        # Placeholder for actual synthesis logic
-        # This would involve a TTS engine (e.g., Tacotron, FastSpeech, or a cloud service)
-        # For now, returning a dummy minimal WAV byte string
-        dummy_wav_data = b"RIFF$\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80>\x00\x00\x00\xfa\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
-        print(f"TTS Service: Synthesis complete. Output size: {len(dummy_wav_data)} bytes.")
-        return dummy_wav_data
-
-    def _encode_audio(self, audio_bytes: bytes, output_format: str) -> bytes:
-        """
-        Encodes raw audio bytes to the desired output format.
-        """
-        print(f"TTS Service: Encoding audio to format: {output_format}")
-        if output_format.lower() == "wav":
-            # Assuming the raw audio_bytes from _synthesize is already in WAV format
-            print("TTS Service: Output format is WAV, no re-encoding needed for this placeholder.")
-            return audio_bytes
-        else:
-            # Placeholder for other encoding (e.g., to MP3, Opus)
-            print(f"TTS Service: Encoding to {output_format} not yet supported. Returning raw WAV bytes.")
-            return audio_bytes # In a real scenario, this would involve an encoding library
-
-    def synthesize_speech(self, text: str, voice_id: str = None, output_format: str = "wav") -> bytes:
-        """
-        Synthesizes speech from input text.
-
-        Args:
-            text (str): The input text to synthesize.
-            voice_id (str, optional): Identifier for the voice to be used. Defaults to None (engine default).
-            output_format (str, optional): Desired audio output format (e.g., "wav", "mp3"). Defaults to "wav".
-
-        Returns:
-            bytes: The synthesized audio data as bytes.
-        """
-        print(f"\nTTS Service: Received request to synthesize: '{text}', Voice: {voice_id}, Format: {output_format}")
+        # Placeholder TTS logic:
+        # In a real implementation, this method would:
+        # 1. Preprocess `request.text_to_synthesize`.
+        # 2. Use a TTS engine (with `request.voice_config_id` if provided) to generate audio data.
+        # 3. If streaming audio, it would return a stream of audio chunks.
+        # 4. For non-streaming, it might return the audio data directly in TTSResponse (if small)
+        #    or provide a way to fetch it (e.g., a URL or stream ID).
+        # For this placeholder, we just acknowledge receipt.
         
-        processed_text = self._preprocess_text(text)
-        raw_audio_bytes = self._synthesize(processed_text, voice_id)
-        final_audio_bytes = self._encode_audio(raw_audio_bytes, output_format)
+        status_message = f"Text for session '{request.session_id}' (voice: '{request.voice_config_id if request.voice_config_id else 'default'}') received by TTS. Placeholder synthesis initiated."
         
-        print(f"TTS Service: Speech synthesis pipeline complete. Returning {len(final_audio_bytes)} bytes.")
-        return final_audio_bytes
+        print(f"TextToSpeechService: Status for SID '{request.session_id}': {status_message}")
 
-# Example usage (optional, for testing or demonstration)
-if __name__ == "__main__":
-    tts_service = TextToSpeechService()
+        return tts_service_pb2.TTSResponse(
+            session_id=request.session_id,
+            status_message=status_message
+            # audio_data and error_message fields are omitted for this placeholder
+        )
 
-    sample_text_1 = "Hello, this is a test of the Text to Speech service."
-    
-    print("\n--- Example 1: Default WAV output ---")
-    audio_output_1 = tts_service.synthesize_speech(sample_text_1)
-    print(f"Generated audio (default WAV) - Length: {len(audio_output_1)} bytes")
-    print(f"Audio data snippet: {audio_output_1[:30]}...") # Print a snippet
-
-    sample_text_2 = "  Another example, with a specific voice ID and MP3 request. "
-    
-    print("\n--- Example 2: Specific voice (mocked) and MP3 output (mocked) ---")
-    audio_output_2 = tts_service.synthesize_speech(
-        text=sample_text_2, 
-        voice_id="custom_voice_001", 
-        output_format="mp3"
+def serve():
+    """
+    Starts the gRPC server for the TextToSpeechService.
+    """
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    tts_service_pb2_grpc.add_TextToSpeechServiceServicer_to_server(
+        TextToSpeechServicer(), server
     )
-    print(f"Generated audio (mocked MP3) - Length: {len(audio_output_2)} bytes")
-    print(f"Audio data snippet: {audio_output_2[:30]}...")
+    
+    port = "50055" # Define the port for Text-to-Speech service
+    listen_addr = f'[::]:{port}'
+    server.add_insecure_port(listen_addr)
+    
+    server.start()
+    print(f"TextToSpeechService server started, listening on port {port}")
 
-    sample_text_3 = "Testing UPPERCASE."
-    print("\n--- Example 3: Uppercase text input ---")
-    audio_output_3 = tts_service.synthesize_speech(sample_text_3)
-    print(f"Generated audio (default WAV) - Length: {len(audio_output_3)} bytes")
-    print(f"Audio data snippet: {audio_output_3[:30]}...")
+    try:
+        # Keep the server running until interrupted
+        # server.wait_for_termination() # This blocks indefinitely
+        while True:
+            time.sleep(86400) # Sleep for a day, effectively keeping the thread alive
+    except KeyboardInterrupt:
+        print("TextToSpeechService server stopping...")
+        server.stop(0) # Graceful stop
+        print("TextToSpeechService server stopped.")
+
+# Main guard to run the server when the script is executed
+if __name__ == '__main__':
+    # The original TextToSpeechService class (business logic) can be instantiated here
+    # if the servicer needs to use it, e.g., for loading models, managing voices.
+    # For this task, the servicer implements logic directly.
+    # e.g., tts_logic = TextToSpeechService()
+    # servicer_instance = TextToSpeechServicer(logic=tts_logic)
+    # and then pass `servicer_instance` to add_TextToSpeechServiceServicer_to_server.
+
+    serve()

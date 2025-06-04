@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package real_time_processing_engine.tts;
+
+// Go package option for generated Go code (if ever needed for this service in Go)
+option go_package = "revovoiceai/real_time_processing_engine/protos/tts_service";
+
+// Request message for Text-to-Speech synthesis
+message TTSRequest {
+  string text_to_synthesize = 1; // The text to be converted to speech
+  string session_id = 2;           // Session identifier for context
+  string voice_config_id = 3;      // Optional: Identifier for a specific voice configuration
+}
+
+// Response message from Text-to-Speech synthesis
+message TTSResponse {
+  string session_id = 1;           // Session identifier
+  string status_message = 2;       // e.g., "Synthesis started", "Text received"
+  // string audio_chunk_id = 3;    // Optional: Identifier for the first audio chunk or stream
+  // bytes audio_data = 4;         // Optional: For returning small audio directly
+  // string error_message = 5;     // Optional: If an error occurred
+}
+
+// TextToSpeechService definition
+service TextToSpeechService {
+  // Synthesizes text to speech
+  rpc SynthesizeText (TTSRequest) returns (TTSResponse);
+}
