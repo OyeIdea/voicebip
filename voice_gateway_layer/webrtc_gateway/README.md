@@ -59,7 +59,7 @@ Go is chosen for its suitability in building high-performance, concurrent networ
 ### Opus Audio Handling
 The WebRTC gateway receives Opus-encoded RTP packets from the client via the `OnTrack` callback. The current implementation includes **placeholders and comments** in `signal.go` that outline where Opus decoding to PCM (specifically Linear16, e.g., at 16kHz, 16-bit signed) would be implemented, potentially using a Go Opus library like `github.com/pion/opus`.
 
-Currently, for pipeline testing and development **without actual Opus decoding implemented yet**, the raw Opus packet data is still what's packaged into the `AudioSegment`'s data field. However, to facilitate downstream service configuration and testing, the `AudioSegment`'s `audio_format` field is now explicitly set to `LINEAR16`. This **simulates** the audio format that *would* be produced after the conceptual decoding step.
+Currently, for pipeline testing and development **without actual Opus decoding implemented yet**, the raw Opus packet data is still what's packaged into the `AudioSegment`'s data field. However, to facilitate downstream service configuration and testing, the `AudioSegment`'s `audio_format` field is now explicitly set to `LINEAR16` (e.g., assuming 16kHz, 16-bit signed PCM). This **simulates** the audio format that *would* be produced after the conceptual decoding step.
 
 This approach allows services like the `SpeechToTextService` to be configured for the target `LINEAR16` PCM format. For a production system that needs to connect to STT engines expecting uncompressed PCM, **implementing the actual Opus decoding at the marked placeholders in `signal.go` is a crucial next step.**
 

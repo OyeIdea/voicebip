@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+import "audio_stream.proto";
+
 package real_time_processing_engine.tts;
 
 // Go package option for generated Go code (if ever needed for this service in Go)
@@ -17,8 +19,9 @@ message TTSResponse {
   string session_id = 1;           // Session identifier
   string status_message = 2;       // e.g., "Synthesis started", "Text received"
   // string audio_chunk_id = 3;    // Optional: Identifier for the first audio chunk or stream
-  // bytes audio_data = 4;         // Optional: For returning small audio directly
+  bytes audio_data = 4;            // Optional: For returning small audio directly
   // string error_message = 5;     // Optional: If an error occurred
+  real_time_processing.AudioFormat audio_format = 6; // Format of the audio_data
 }
 
 // TextToSpeechService definition

@@ -87,18 +87,20 @@ Represents a request to the TTS service to synthesize speech from text.
 
 ### Message: `TTSResponse`
 
-Represents the response from the TTS service after processing a synthesis request. For the current placeholder implementation, this primarily contains status information.
+Represents the response from the TTS service after processing a synthesis request. It includes a status message and can also contain the synthesized audio data and its format.
 
 *   `string session_id = 1;`
     *   The session identifier, passed through from the `TTSRequest`.
 *   `string status_message = 2;`
-    *   A message describing the result or status of the synthesis request (e.g., "Synthesis started", "Text received by TTS. Placeholder synthesis.").
+    *   A message describing the result or status of the synthesis request (e.g., "Synthesis started", "Simulated TTS: Returning dummy PCMU audio.").
 *   `// string audio_chunk_id = 3;`
     *   (Commented out) Optional: Identifier for the first audio chunk if the audio is streamed.
-*   `// bytes audio_data = 4;`
-    *   (Commented out) Optional: For returning small audio data directly in the response.
+*   `bytes audio_data = 4;`
+    *   The synthesized audio data payload. In simulated implementations, this may contain dummy PCM data.
 *   `// string error_message = 5;`
     *   (Commented out) Optional: If an error occurred during synthesis.
+*   `real_time_processing.AudioFormat audio_format = 6;`
+    *   The format of the `audio_data` (e.g., PCMU, LINEAR16), referencing the `AudioFormat` enum from `audio_stream.proto`.
 
 ### Service: `TextToSpeechService`
 

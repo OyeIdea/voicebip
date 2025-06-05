@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"revovoiceai/voice_gateway_layer/internal/protos/real_time_processing"
+	// import "github.com/pion/opus" // Conceptual import for Opus decoding
 )
 
 // SignalMessage defines the structure for messages exchanged over WebSocket.
@@ -145,19 +146,26 @@ func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConn
 					// Note: For WebRTC, RTP packet data is directly the audio data for codecs like Opus.
 					// No separate RTP header stripping is typically needed here as Pion handles it.
 
-					// --- OPUS DECODING PLACEHOLDER ---
-					// WebRTC commonly uses Opus, a compressed format. However, downstream STT services
-					// often expect uncompressed PCM (e.g., L16 or PCMU). The following section
-					// outlines where Opus decoding would occur. For now, raw Opus data is passed through,
-					// but the AudioSegment is marked as PCMU to simulate the intended pipeline format.
-					// This is for testing pipeline flow and NOT a functional audio conversion.
-					// TODO: Initialize Opus decoder here.
-					// For example, using a library like github.com/pion/opus:
-					// decoder, err := opus.NewDecoder(48000, 1) // Assuming 48kHz sample rate, 1 channel for Opus
+					// Conceptual Opus Decoder Initialization
+					// Assumes the track is Opus, 48kHz, stereo (though we'll process as mono)
+					// In a real scenario, sample rate and channels might be derived from SDP or track settings.
+					// const opusSampleRate = 48000
+					// const opusChannels = 2 // Pion's Opus library typically decodes stereo Opus to stereo PCM.
+										 // We would then need to select one channel or mix down.
+										 // For STT, mono is usually required.
+					// decoder, err := opus.NewDecoder(opusSampleRate, opusChannels)
 					// if err != nil {
-					//     log.Printf("%s[ERROR][OnTrack][Audio] Failed to create Opus decoder: %v", WebRTCGatewayLogPrefix, err)
-					//     return
+					// 	log.Printf("%s[ERROR][OnTrack][Audio] Failed to create Opus decoder for SessionID %s: %v", WebRTCGatewayLogPrefix, sessionID, err)
+					// 	return
 					// }
+					// log.Printf("%s[INFO][OnTrack][Audio] Conceptual Opus decoder initialized for SessionID %s", WebRTCGatewayLogPrefix, sessionID)
+
+					// For STT, we usually need mono Linear16 PCM, often at 16kHz.
+					// The pion/opus decoder outputs PCM matching Opus's sample rate (e.g., 48kHz) and channels.
+					// Additional steps for resampling (e.g., 48kHz to 16kHz) and channel selection/mixing (stereo to mono)
+					// would be needed after decoding. These are complex and omitted here.
+					// We will placeholder by directly using rtpBuf and marking as LINEAR16,
+					// assuming 16kHz mono for the STT service based on previous decisions.
 
 				rtpBuf := make([]byte, 1500) // Standard MTU size for RTP
 				var sequenceNumber uint32 = 0
@@ -168,28 +176,47 @@ func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConn
 						return // Stop processing this track
 					}
 
-					// TODO: Decode Opus packet (rtpBuf[:n]) to PCM here.
-					// pcmData := make([]int16, 1024) // Adjust buffer size as needed
-					// nSamples, err := decoder.Decode(rtpBuf[:n], pcmData)
-					// if err != nil {
-					//     log.Printf("%s[ERROR][OnTrack][Audio] Failed to decode Opus packet: %v", WebRTCGatewayLogPrefix, err)
-					//     continue // Skip this packet
-					// }
+					// --- OPUS DECODING & PCM PREPARATION (Conceptual) ---
+					// 1. Decode Opus:
+					//    The rtpBuf[:n] contains the raw Opus packet.
+					//    pcmBuf := make([]int16, frameSize*opusChannels) // frameSize depends on Opus packet (e.g., 960 for 20ms at 48kHz)
+					//    samplesDecoded, err := decoder.Decode(rtpBuf[:n], pcmBuf)
+					//    if err != nil {
+					//        log.Printf("%s[ERROR][OnTrack][Audio] Opus decode error for SessionID %s: %v", WebRTCGatewayLogPrefix, sessionID, err)
+					//        continue
+					//    }
 					//
-					// // For this example, we'll assume the decoded PCM is 8kHz, 16-bit, 1-channel mu-law (PCMU)
-					// // This would require further processing/conversion from the raw PCM output of the decoder.
-					// // For simplicity in this placeholder, we'll use the original rtpBuf data
-					// // but mark it as PCMU, acknowledging this is not a true decode + transcode.
-					// // A more complete implementation would convert nSamples of pcmData into a PCMU byte array.
-					decodedAudioData := rtpBuf[:n] // Placeholder: Should be actual decoded PCM data
+					// 2. Channel Selection/Mixing (if stereo Opus):
+					//    monoPcmBuf := make([]int16, samplesDecoded) // Assuming we take the first channel or mix down
+					//    for i := 0; i < samplesDecoded; i++ {
+					//        monoPcmBuf[i] = pcmBuf[i*opusChannels] // Example: take first channel
+					//    }
+					//
+					// 3. Resampling (e.g., from 48kHz Opus output to 16kHz for STT):
+					//    resampledPcmBuf := resample(monoPcmBuf, opusSampleRate, 16000) // Conceptual resample function
+					//
+					// 4. Convert int16 PCM to byte slice (Linear16 is typically 16-bit signed little-endian):
+					//    outputBytes := make([]byte, len(resampledPcmBuf)*2)
+					//    for i, s := range resampledPcmBuf {
+					//        binary.LittleEndian.PutUint16(outputBytes[i*2:], uint16(s))
+					//    }
+					//
+					// For this placeholder stage, we are NOT performing actual decoding.
+					// We continue to use the raw rtpBuf data but mark it as LINEAR16
+					// for pipeline flow testing, assuming 16kHz mono based on downstream STT needs.
+					// The actual data in rtpBuf[:n] is still Opus.
+					audioDataForSegment := rtpBuf[:n]
+					// --- END CONCEPTUAL DECODING ---
 
 					segment := &real_time_processing.AudioSegment{
 						SessionId:      sessionID,
 						Timestamp:      time.Now().UnixMilli(),
-						AudioFormat:    real_time_processing.AudioFormat_LINEAR16, // Placeholder: Assuming Opus is decoded to LINEAR16 PCM (e.g., 16000 Hz, 16-bit signed)
+						// AudioFormat is now LINEAR16, assuming the conceptual decoding above
+						// would output 16kHz, 16-bit mono PCM.
+						AudioFormat:    real_time_processing.AudioFormat_LINEAR16,
 						SequenceNumber: sequenceNumber,
-						Data:           decodedAudioData, // Use the (conceptually) decoded audio data
-						IsFinal:        false,      // VAD will determine this later
+						Data:           audioDataForSegment, // This is still raw Opus data in this placeholder
+						IsFinal:        false,
 					}
 					sendAudioSegmentToSdmWebRTC(segment)
 					sequenceNumber++

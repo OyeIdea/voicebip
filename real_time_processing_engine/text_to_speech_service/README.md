@@ -22,14 +22,14 @@ The TTS Service exposes its functionality via a gRPC interface.
 *   **Port:** The gRPC server listens on `0.0.0.0:50055`.
 *   **RPC Method:** `SynthesizeText(TTSRequest) returns (TTSResponse)`
     *   **`TTSRequest`**: Contains the `text_to_synthesize`, `session_id`, and an optional `voice_config_id`.
-    *   **`TTSResponse`**: Returns the `session_id` and a `status_message`. Fields for actual audio data are commented out in the proto for the current placeholder implementation.
+    *   **`TTSResponse`**: Returns the `session_id`, a `status_message`, and now includes `audio_data` (containing dummy/simulated PCM audio) and `audio_format` (e.g., PCMU) as per the updated proto definition.
 
 ## Current Status & Logic
 
 The current implementation of the `TextToSpeechServicer` in `service.py` is a **placeholder**.
 *   It logs the `text_to_synthesize`, `session_id`, and `voice_config_id` it receives.
-*   It returns a `TTSResponse` with a `status_message` confirming that the text has been received and that placeholder synthesis has been initiated (e.g., "Text for session [session_id] (voice: '[voice_id]') received by TTS. Placeholder synthesis initiated.").
-*   **No actual audio is generated or returned.** The primary purpose is to complete the gRPC communication chain. Future development will integrate a real TTS engine.
+*   It returns a `TTSResponse` with a `status_message` confirming that the text has been received and that dummy audio is being returned (e.g., "Simulated TTS for session '[session_id]': Returning dummy PCMU audio.").
+*   **Simulated audio data is generated.** It returns a `TTSResponse` with a `status_message` and a small, fixed snippet of dummy PCM audio data (e.g., PCMU format) in the `audio_data` field, with `audio_format` set accordingly. The main purpose is to test the pipeline's ability to handle audio in responses. Future development will integrate a real TTS engine.
 
 ## Interaction in the System
 

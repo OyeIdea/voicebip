@@ -8,6 +8,7 @@ import time # Required for server.wait_for_termination() in a loop
 # These should be in the same directory or Python path
 import tts_service_pb2
 import tts_service_pb2_grpc
+import audio_stream_pb2 # Needed for AudioFormat enum
 
 # Optional: for more advanced logging
 # import logging
@@ -32,16 +33,21 @@ class TextToSpeechServicer(tts_service_pb2_grpc.TextToSpeechServiceServicer):
         # 3. If streaming audio, it would return a stream of audio chunks.
         # 4. For non-streaming, it might return the audio data directly in TTSResponse (if small)
         #    or provide a way to fetch it (e.g., a URL or stream ID).
-        # For this placeholder, we just acknowledge receipt.
+        # For this placeholder, we just acknowledge receipt and return dummy audio.
         
-        status_message = f"Text for session '{request.session_id}' (voice: '{request.voice_config_id if request.voice_config_id else 'default'}') received by TTS. Placeholder synthesis initiated."
+        # Create dummy audio payload (e.g., for PCMU: 8-bit, 160 bytes for 20ms at 8kHz)
+        dummy_audio_bytes = bytes([i % 256 for i in range(160)]) # Simple repeating pattern
+        audio_fmt = audio_stream_pb2.AudioFormat.PCMU
+
+        status_message = f"Simulated TTS for session '{request.session_id}': Returning dummy {audio_stream_pb2.AudioFormat.Name(audio_fmt)} audio."
         
         print(f"TextToSpeechService: Status for SID '{request.session_id}': {status_message}")
 
         return tts_service_pb2.TTSResponse(
             session_id=request.session_id,
-            status_message=status_message
-            # audio_data and error_message fields are omitted for this placeholder
+            status_message=status_message,
+            audio_data=dummy_audio_bytes,
+            audio_format=audio_fmt
         )
 
 def serve():
