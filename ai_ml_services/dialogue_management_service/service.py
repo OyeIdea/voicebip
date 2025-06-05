@@ -45,18 +45,18 @@ class DialogueManagementServicer(dialogue_management_service_pb2_grpc.DialogueMa
         session_state['last_intent'] = "unknown_intent_or_empty" # Default, override below
 
         # 1. Handle pending questions first
-        if session_state.get('pending_question') == 'ask_location_for_weather':
+        pending_question = session_state.get('pending_question')
+        pending_intent_data = session_state.get('pending_intent_data', {})
+
+        if pending_question == 'ask_location_for_weather':
             location_response_found = False
             location_value = ""
-            # Try to find a "location" entity
             for entity in nlu_result.entities:
                 if entity.name == "location":
                     location_value = entity.value
                     location_response_found = True
                     break
-
             if not location_response_found and nlu_result.processed_text:
-                # Use non-empty processed_text as a potential location if no entity found
                 location_value = nlu_result.processed_text
                 location_response_found = True
                 print(f"DialogueManagementService: SID '{session_id}', No location entity, using processed_text '{location_value}' as location.")
@@ -64,23 +64,70 @@ class DialogueManagementServicer(dialogue_management_service_pb2_grpc.DialogueMa
             if location_response_found:
                 text_response = f"Got it. I'm sorry, I can't fetch the actual weather for {location_value} right now, but I hope it's a pleasant day!"
                 session_state.pop('pending_question', None)
+                # No pending_intent_data for weather currently, so no pop needed here
                 session_state['last_intent'] = "get_weather_location_answered"
             else:
                 text_response = "I still need a location for the weather forecast. Could you please tell me where?"
-                # session_state['pending_question'] remains 'ask_location_for_weather'
                 session_state['last_intent'] = "get_weather_still_asking_location"
 
-        # 2. Handle intents if no pending question was exclusively handled
+        elif pending_question == 'ask_drink_name':
+            drink_name_response = nlu_result.processed_text # Or extract from a "drink_name" entity if available
+            if drink_name_response: # Assuming any non-empty text is the drink name
+                pending_intent_data['drink_name'] = drink_name_response
+                session_state['pending_intent_data'] = pending_intent_data
+
+                # Check if size is already known (e.g., from initial order_drink intent or if provided with name)
+                drink_size_value = pending_intent_data.get('drink_size')
+                if not drink_size_value: # Try to get from current entities if not already in pending_intent_data
+                    for entity in nlu_result.entities:
+                        if entity.name == "drink_size": # Assuming "drink_size" entity
+                            drink_size_value = entity.value
+                            pending_intent_data['drink_size'] = drink_size_value
+                            break
+
+                if not drink_size_value:
+                    text_response = f"What size for the {pending_intent_data['drink_name']}?"
+                    session_state['pending_question'] = 'ask_drink_size'
+                    session_state['last_intent'] = 'order_drink_asking_size'
+                else: # Size is known
+                    text_response = f"Okay, one {pending_intent_data['drink_size']} {pending_intent_data['drink_name']} coming up!"
+                    session_state.pop('pending_question', None)
+                    session_state.pop('pending_intent_data', None)
+                    session_state['last_intent'] = 'order_drink_complete'
+            else:
+                text_response = "I didn't catch the drink name. What would you like to order?"
+                session_state['last_intent'] = 'order_drink_still_asking_name'
+                # pending_question remains 'ask_drink_name'
+
+        elif pending_question == 'ask_drink_size':
+            drink_size_response = nlu_result.processed_text # Or extract from a "drink_size" entity
+            if drink_size_response: # Assuming any non-empty text is the size
+                pending_intent_data['drink_size'] = drink_size_response # Though not strictly needed if completing
+                drink_name_value = pending_intent_data.get('drink_name', 'previously mentioned drink')
+                text_response = f"Okay, one {drink_size_response} {drink_name_value} coming up!"
+                session_state.pop('pending_question', None)
+                session_state.pop('pending_intent_data', None)
+                session_state['last_intent'] = 'order_drink_complete'
+            else:
+                drink_name_value = pending_intent_data.get('drink_name', 'that drink')
+                text_response = f"I didn't catch the size for {drink_name_value}. What size would you like?"
+                session_state['last_intent'] = 'order_drink_still_asking_size'
+                # pending_question remains 'ask_drink_size'
+
+        # 2. Handle intents if no pending question was exclusively handled above
         elif nlu_result.intent == "greeting":
             text_response = "Hello there! How can I help you today?"
             session_state['last_intent'] = "greeting"
-            session_state.pop('pending_question', None) # Clear any pending question on greeting
+            session_state.pop('pending_question', None)
+            session_state.pop('pending_intent_data', None)
         elif nlu_result.intent == "get_help":
             text_response = "I understand you need help. I'll do my best to assist you."
             session_state['last_intent'] = "get_help"
             session_state.pop('pending_question', None)
+            session_state.pop('pending_intent_data', None)
         elif nlu_result.intent == "get_weather":
-            location = "your area" # Default if no entity
+            session_state.pop('pending_intent_data', None) # Clear drink context
+            location = "your area"
             date_info = ""
             location_entity_found = False
             for entity in nlu_result.entities:
@@ -90,30 +137,60 @@ class DialogueManagementServicer(dialogue_management_service_pb2_grpc.DialogueMa
                 elif entity.name == "date":
                     date_info = f" for {entity.value}"
 
-            if location_entity_found: # A specific location was provided in this turn
+            if location_entity_found:
                 text_response = f"I'm sorry, I can't fetch the actual weather for {location}{date_info} right now, but I hope it's a pleasant day!"
                 session_state.pop('pending_question', None)
                 session_state['last_intent'] = "get_weather_location_provided"
-            else: # No location entity found in this turn
+            else:
                 text_response = "For which location would you like the weather?"
                 session_state['pending_question'] = "ask_location_for_weather"
                 session_state['last_intent'] = "get_weather_asking_location"
+
+        elif nlu_result.intent == "order_drink":
+            # Initialize or retrieve pending_intent_data for this intent
+            current_pending_data = session_state.get('pending_intent_data', {})
+
+            # Extract entities if present
+            for entity in nlu_result.entities:
+                if entity.name == "drink_name": # Assuming entity name from NLU
+                    current_pending_data['drink_name'] = entity.value
+                elif entity.name == "drink_size": # Assuming entity name from NLU
+                    current_pending_data['drink_size'] = entity.value
+
+            drink_name_known = 'drink_name' in current_pending_data
+            drink_size_known = 'drink_size' in current_pending_data
+
+            if not drink_name_known:
+                text_response = "What drink would you like to order?"
+                session_state['pending_question'] = 'ask_drink_name'
+                session_state['last_intent'] = 'order_drink_asking_name'
+                session_state['pending_intent_data'] = current_pending_data # Save any partial data (e.g. size if provided without name)
+            elif not drink_size_known:
+                text_response = f"What size would you like for your {current_pending_data['drink_name']}?"
+                session_state['pending_question'] = 'ask_drink_size'
+                session_state['last_intent'] = 'order_drink_asking_size'
+                session_state['pending_intent_data'] = current_pending_data # Save drink_name
+            else: # Both name and size are known
+                text_response = f"Okay, one {current_pending_data['drink_size']} {current_pending_data['drink_name']} coming up!"
+                session_state.pop('pending_question', None)
+                session_state.pop('pending_intent_data', None)
+                session_state['last_intent'] = 'order_drink_complete'
+
         elif nlu_result.intent == "goodbye":
             text_response = "Goodbye! Have a great day."
-            session_state['last_intent'] = "goodbye" # Set before popping
-            self.session_states.pop(session_id, None) # Clear state for this session
-            # No need to pop pending_question as entire state is cleared
+            session_state['last_intent'] = "goodbye"
+            self.session_states.pop(session_id, None)
         elif nlu_result.intent == "error_no_dialogflow_client" or nlu_result.intent == "error_calling_dialogflow":
             text_response = "I'm having a little trouble with my understanding capabilities at the moment. Please try again later."
             session_state.pop('pending_question', None)
+            session_state.pop('pending_intent_data', None)
             session_state['last_intent'] = nlu_result.intent
-        elif not nlu_result.intent: # Catches empty intents if not handled by pending_question logic
+        elif not nlu_result.intent:
              text_response = "I'm not sure what you mean. Can you try rephrasing?"
              session_state['last_intent'] = "unknown_intent_or_empty"
-             session_state.pop('pending_question', None) # Optional: clear pending q on unknown
-        # else:
-            # The default text_response from the top is used if no condition above is met.
-            # session_state['last_intent'] is already "unknown_intent_or_empty"
+             session_state.pop('pending_question', None)
+             session_state.pop('pending_intent_data', None)
+
 
         print(f"DialogueManagementService: SID '{session_id}', Determined text response: '{text_response}', Updated Session State: {self.session_states.get(session_id)}")
 

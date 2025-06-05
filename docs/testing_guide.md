@@ -13,6 +13,7 @@ This section outlines how to test the `SpeechToTextService` with a real Deepgram
     ```bash
     export DEEPGRAM_API_KEY="your_actual_deepgram_api_key_here"
     ```
+    Ensure this key is active and has transcription minutes available on your Deepgram account.
     Alternatively, for local development, you can place it in a `.env` file within the `real_time_processing_engine/speech_to_text_service/` directory (ensure `.env` is in `.gitignore`).
 
 ### Running the Pipeline for STT Test
@@ -40,7 +41,7 @@ To test the STT service, you'll need to run the following services:
             # From the voice_gateway_layer directory
             go run ./sip_gateway/ # Or however you build/run your Go services
             ```
-        *   To trigger its audio sending logic, you would typically need to simulate a SIP INVITE call to it. (The specifics of triggering a test SIP call are outside this guide but are needed for this gateway to send data).
+        *   To trigger the `sip_gateway` to send audio, you would typically use a SIP client (e.g., Linphone, MicroSIP, or a SIP testing tool) to place a call to `sip:test@<sip_gateway_ip>:<sip_gateway_port>` (default port is usually 5060 if not specified otherwise in its config). Once the call is answered (200 OK by the gateway), the gateway will start sending its dummy PCMU audio stream.
 
     *   **Using `webrtc_gateway` (Sends LINEAR16 PCM Audio - Conceptually Decoded from Opus)**:
         *   This gateway forwards audio received from a WebRTC client. The code has placeholders for Opus decoding and now marks the audio sent to `StreamingDataManager` as `LINEAR16` (assumed to be 16kHz).
@@ -50,6 +51,7 @@ To test the STT service, you'll need to run the following services:
             go run ./webrtc_gateway/ # Or however you build/run your Go services
             ```
         *   To test, you'd need a WebRTC client (e.g., a browser application) to connect to its WebSocket endpoint (`ws://localhost:8080/ws` by default), establish a peer connection, and stream audio.
+        *   Note that for this path to work with the real Deepgram STT service, the conceptual Opus decoding (planned in `signal.go`) must be fully implemented to provide actual Linear16 PCM data.
 
 ### Expected Behavior and Logs
 
@@ -63,6 +65,7 @@ When the pipeline is running and audio is sent from a gateway:
     *   `StreamingDataManager: Received transcription from STT...` (showing the transcript received back).
 
 3.  **`SpeechToTextService` Logs (Crucial for Deepgram Test)**:
+    *   **If `DEEPGRAM_API_KEY` is missing or invalid**: You will likely see a `CRITICAL: DEEPGRAM_API_KEY is not set...` message on startup, or errors like `Deepgram error for session_id: Exception('auth')` or `Error starting Deepgram connection...` with authentication-related messages when an audio segment arrives.
     *   `Attempting to start Deepgram connection for session_id with format AUDIO_FORMAT_PCMU` (or `AUDIO_FORMAT_LINEAR16`).
     *   `Deepgram connection started for session_id with encoding mulaw, sample rate 8000` (for PCMU) or `encoding linear16, sample rate 16000` (for LINEAR16).
     *   `Deepgram final transcript for session_id: '...' (Confidence: ...)` - **This indicates successful transcription by Deepgram.**
