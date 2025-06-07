@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"revovoiceai/voice_gateway_layer/internal/protos/real_time_processing"
+	"encoding/binary" // For converting int16 to bytes
 	// import "github.com/pion/opus" // Conceptual import for Opus decoding
 )
 
@@ -147,18 +148,19 @@ func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConn
 					// No separate RTP header stripping is typically needed here as Pion handles it.
 
 					// Conceptual Opus Decoder Initialization
-					// Assumes the track is Opus, 48kHz, stereo (though we'll process as mono)
-					// In a real scenario, sample rate and channels might be derived from SDP or track settings.
-					// const opusSampleRate = 48000
-					// const opusChannels = 2 // Pion's Opus library typically decodes stereo Opus to stereo PCM.
-										 // We would then need to select one channel or mix down.
-										 // For STT, mono is usually required.
-					// decoder, err := opus.NewDecoder(opusSampleRate, opusChannels)
+					log.Printf("%s[INFO][OnTrack][Audio] Track codec: SR=%d, Channels=%d, MIME=%s", WebRTCGatewayLogPrefix, track.Codec().SampleRate, track.Codec().Channels, track.Codec().MimeType)
+					// decoder, err := opus.NewDecoder(track.Codec().SampleRate, track.Codec().Channels)
 					// if err != nil {
 					// 	log.Printf("%s[ERROR][OnTrack][Audio] Failed to create Opus decoder for SessionID %s: %v", WebRTCGatewayLogPrefix, sessionID, err)
 					// 	return
 					// }
-					// log.Printf("%s[INFO][OnTrack][Audio] Conceptual Opus decoder initialized for SessionID %s", WebRTCGatewayLogPrefix, sessionID)
+					// log.Printf("%s[INFO][OnTrack][Audio] Opus decoder initialized for SessionID %s. SampleRate: %d, Channels: %d", WebRTCGatewayLogPrefix, sessionID, track.Codec().SampleRate, track.Codec().Channels)
+
+					// Buffer for decoded PCM data (int16 samples)
+					// Opus typically uses 20ms frames. At 48kHz, 20ms = 960 samples. If stereo, 960*2.
+					// Max frame size for Opus is 120ms (5760 samples at 48kHz).
+					// Let's use a buffer large enough for common frame sizes.
+					// pcmBuf := make([]int16, 2048) // Sufficient for common Opus frame sizes and channels
 
 					// For STT, we usually need mono Linear16 PCM, often at 16kHz.
 					// The pion/opus decoder outputs PCM matching Opus's sample rate (e.g., 48kHz) and channels.
@@ -179,34 +181,45 @@ func HandleWebSocketConnections(w http.ResponseWriter, r *http.Request, peerConn
 					// --- OPUS DECODING & PCM PREPARATION (Conceptual) ---
 					// 1. Decode Opus:
 					//    The rtpBuf[:n] contains the raw Opus packet.
-					//    pcmBuf := make([]int16, frameSize*opusChannels) // frameSize depends on Opus packet (e.g., 960 for 20ms at 48kHz)
 					//    samplesDecoded, err := decoder.Decode(rtpBuf[:n], pcmBuf)
 					//    if err != nil {
 					//        log.Printf("%s[ERROR][OnTrack][Audio] Opus decode error for SessionID %s: %v", WebRTCGatewayLogPrefix, sessionID, err)
-					//        continue
+					//        continue // Skip this packet
 					//    }
 					//
-					// 2. Channel Selection/Mixing (if stereo Opus):
-					//    monoPcmBuf := make([]int16, samplesDecoded) // Assuming we take the first channel or mix down
-					//    for i := 0; i < samplesDecoded; i++ {
-					//        monoPcmBuf[i] = pcmBuf[i*opusChannels] // Example: take first channel
-					//    }
+					// 2. Channel Selection (convert to mono if stereo) & Prepare byte slice
+					//    For STT, mono is usually required. We'll take the first channel if stereo.
+					//    Linear16 is 16-bit signed PCM.
+					// var monoPcmData []byte
+					// if track.Codec().Channels == 2 {
+					// 	monoPcmBuf := make([]int16, samplesDecoded) // samplesDecoded is per channel for pion/opus
+					// 	for i := 0; i < samplesDecoded; i++ {
+					// 		monoPcmBuf[i] = pcmBuf[i*2] // Take samples from the first channel
+					// 	}
+					// 	outputBytes := make([]byte, samplesDecoded*2) // Each int16 is 2 bytes
+					// 	for i, s := range monoPcmBuf {
+					// 		binary.LittleEndian.PutUint16(outputBytes[i*2:], uint16(s))
+					// 	}
+					// 	monoPcmData = outputBytes
+					// } else { // Already mono
+					// 	outputBytes := make([]byte, samplesDecoded*2)
+					// 	for i := 0; i < samplesDecoded; i++ {
+					// 		binary.LittleEndian.PutUint16(outputBytes[i*2:], uint16(pcmBuf[i]))
+					// 	}
+					// 	monoPcmData = outputBytes
+					// }
 					//
 					// 3. Resampling (e.g., from 48kHz Opus output to 16kHz for STT):
-					//    resampledPcmBuf := resample(monoPcmBuf, opusSampleRate, 16000) // Conceptual resample function
+					//    TODO: Implement resampling if STT service requires a specific rate (e.g., 16kHz)
+					//          and track.Codec().SampleRate is different (e.g., 48kHz).
+					//          For now, we send at the decoded sample rate.
+					//          The SpeechToTextService is currently configured for 16kHz for LINEAR16.
+					//          If Opus decodes to 48kHz, this will be a mismatch without resampling.
+					//          Deepgram does support 48kHz linear16, so STT service might need adjustment
+					//          if resampling isn't done here.
 					//
-					// 4. Convert int16 PCM to byte slice (Linear16 is typically 16-bit signed little-endian):
-					//    outputBytes := make([]byte, len(resampledPcmBuf)*2)
-					//    for i, s := range resampledPcmBuf {
-					//        binary.LittleEndian.PutUint16(outputBytes[i*2:], uint16(s))
-					//    }
-					//
-					// For this placeholder stage, we are NOT performing actual decoding.
-					// We continue to use the raw rtpBuf data but mark it as LINEAR16
-					// for pipeline flow testing, assuming 16kHz mono based on downstream STT needs.
-					// The actual data in rtpBuf[:n] is still Opus.
-					audioDataForSegment := rtpBuf[:n]
-					// --- END CONCEPTUAL DECODING ---
+					audioDataForSegment := rtpBuf[:n] // Placeholder: This is still raw Opus data. The above steps are conceptual.
+					// --- END DECODING & PCM PREPARATION ---
 
 					segment := &real_time_processing.AudioSegment{
 						SessionId:      sessionID,
